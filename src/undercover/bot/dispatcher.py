@@ -11,7 +11,7 @@ from aiogram_dialog import setup_dialogs
 from undercover.bot.errors import create_error_router
 from undercover.bot.middlewares.throttling import ThrottlingMiddleware
 from undercover.bot.routers.discussion import create_discussion_router, start_discussion
-from undercover.bot.routers.reveal import create_reveal_router
+from undercover.bot.routers.reveal import create_reveal_router, start_reveal
 from undercover.bot.routers.setup_dialog import create_setup_dialog
 from undercover.bot.routers.start import create_start_router
 from undercover.config import Settings
@@ -44,7 +44,7 @@ def create_dispatcher(dependencies: AppDependencies) -> Dispatcher:
     log_game = game_log_writer(dependencies.sessionmaker)
 
     dispatcher.include_router(create_start_router())
-    dispatcher.include_router(create_setup_dialog(open_words))
+    dispatcher.include_router(create_setup_dialog(open_words, start_reveal))
     dispatcher.include_router(create_reveal_router(start_discussion))
     dispatcher.include_router(create_discussion_router(open_words, log_game))
     dispatcher.include_router(create_error_router())

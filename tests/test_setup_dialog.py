@@ -5,6 +5,7 @@ from typing import Final
 
 import pytest
 from aiogram import Dispatcher
+from aiogram.methods import SendPhoto
 from aiogram.types import Message
 from aiogram_dialog import setup_dialogs
 from aiogram_dialog.test_tools import BotClient, MockMessageManager
@@ -14,6 +15,7 @@ from aiogram_dialog.test_tools.memory_storage import JsonMemoryStorage
 from fake_bot import FakeSession, make_bot
 from fake_games import FakeGameStateRepository
 from fake_words import HINTS, WORD, FakeWord, FakeWords, pizza
+from undercover.bot.routers.reveal import start_reveal
 from undercover.bot.routers.setup_dialog import Setup, create_setup_dialog
 from undercover.bot.routers.start import create_start_router
 from undercover.game.engine import (
@@ -23,7 +25,7 @@ from undercover.game.engine import (
     max_spies_count,
 )
 from undercover.game.models import GameStatus
-from undercover.texts import Buttons, Errors
+from undercover.texts import Buttons, Errors, Reveal
 from undercover.texts import Setup as SetupTexts
 
 CHAT_ID: Final = 100500
@@ -55,6 +57,7 @@ class Table:
     messages: MockMessageManager
     games: FakeGameStateRepository
     words: FakeWords
+    session: FakeSession
 
     async def send(self, text: str) -> None:
         await self.client.send(text)
@@ -81,15 +84,17 @@ async def table(words: FakeWords) -> Table:
     games = FakeGameStateRepository()
     dispatcher = Dispatcher(storage=JsonMemoryStorage(), games=games)
     dispatcher.include_router(create_start_router())
-    dispatcher.include_router(create_setup_dialog(words.open))
+    dispatcher.include_router(create_setup_dialog(words.open, start_reveal))
     messages = MockMessageManager()
     setup_dialogs(dispatcher, message_manager=messages)
 
+    session = FakeSession()
     table = Table(
-        client=BotClient(dispatcher, user_id=HOST_ID, chat_id=CHAT_ID, bot=make_bot(FakeSession())),
+        client=BotClient(dispatcher, user_id=HOST_ID, chat_id=CHAT_ID, bot=make_bot(session)),
         messages=messages,
         games=games,
         words=words,
+        session=session,
     )
     await table.send("/start")
     return table
@@ -140,10 +145,24 @@ async def test_full_setup_ends_with_a_session_ready_to_deal(
     assert [player.order_index for player in state.players] == list(range(players_count))
     assert sum(player.is_spy for player in state.players) == spies_count
     assert (state.chat_id, state.host_user_id) == (CHAT_ID, HOST_ID)
-    assert state.status is GameStatus.SETUP
+    assert state.status is GameStatus.REVEAL
     assert state.word_text == WORD
     assert set(state.hint_by_spy) == {p.order_index for p in state.players if p.is_spy}
     assert set(state.hint_by_spy.values()) <= set(HINTS)
+
+
+async def test_the_deal_starts_right_after_the_play_button(table: Table) -> None:
+    names = await fill(table, 4)
+
+    await table.click(Buttons.PLAY)
+
+    state = table.games.stored
+    assert state.status is GameStatus.REVEAL
+    assert state.reveal_cursor == 0
+
+    (card,) = table.session.calls(SendPhoto)
+    assert card.caption == Reveal.TURN_CAPTION.format(position=1, total=4, name=names[0])
+    assert card.reply_markup is not None
 
 
 async def test_confirmation_shows_the_deal_order(table: Table) -> None:

@@ -4,6 +4,7 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Any, Final
 
+from aiogram import Bot
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Chat, Message
 from aiogram_dialog import Dialog, DialogManager, Window
@@ -12,6 +13,7 @@ from aiogram_dialog.widgets.kbd import Button, Row
 from aiogram_dialog.widgets.kbd.button import OnClick
 from aiogram_dialog.widgets.text import Const, Format, Multi
 
+from undercover.bot.routers.reveal import PhaseStarter
 from undercover.game.engine import (
     MAX_NAME_LENGTH,
     MAX_PLAYERS,
@@ -61,7 +63,7 @@ class SetupDraft:
         )
 
 
-def create_setup_dialog(open_words: WordsSourceFactory) -> Dialog:
+def create_setup_dialog(open_words: WordsSourceFactory, start_reveal: PhaseStarter) -> Dialog:
     return Dialog(
         Window(
             Multi(
@@ -121,7 +123,11 @@ def create_setup_dialog(open_words: WordsSourceFactory) -> Dialog:
                 sep="\n\n",
             ),
             Row(
-                Button(Const(Buttons.PLAY), id="play", on_click=_play(open_words)),
+                Button(
+                    Const(Buttons.PLAY),
+                    id="play",
+                    on_click=_play(open_words, start_reveal),
+                ),
                 Button(Const(Buttons.RESTART), id="restart", on_click=_on_restart),
             ),
             state=Setup.confirm_start,
@@ -246,7 +252,7 @@ async def _on_restart(
     await _restart(dialog_manager)
 
 
-def _play(open_words: WordsSourceFactory) -> OnClick:
+def _play(open_words: WordsSourceFactory, start_reveal: PhaseStarter) -> OnClick:
     async def on_play(
         callback: CallbackQuery, _button: Button, dialog_manager: DialogManager
     ) -> None:
@@ -262,6 +268,7 @@ def _play(open_words: WordsSourceFactory) -> OnClick:
 
         games: GameStateRepository = dialog_manager.middleware_data["games"]
         chat: Chat = dialog_manager.middleware_data["event_chat"]
+        bot: Bot = dialog_manager.middleware_data["bot"]
 
         try:
             async with open_words() as words:
@@ -282,7 +289,6 @@ def _play(open_words: WordsSourceFactory) -> OnClick:
             await _restart(dialog_manager, SetupTexts.BROKEN_DRAFT)
             return
 
-        await games.save(state)
         logger.info(
             "чат %s: собрана партия %s на %s игроков (%s шпионов)",
             chat.id,
@@ -291,6 +297,7 @@ def _play(open_words: WordsSourceFactory) -> OnClick:
             draft.spies_count,
         )
         await dialog_manager.done()
+        await start_reveal(bot, games, state)
 
     return on_play
 

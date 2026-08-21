@@ -182,7 +182,7 @@ async def table(words: FakeWords, log: RecordingLog) -> Table:
     games = FakeGameStateRepository()
     dispatcher = Dispatcher(storage=JsonMemoryStorage(), games=games)
     dispatcher.include_router(start_router())
-    dispatcher.include_router(create_setup_dialog(words.open))
+    dispatcher.include_router(create_setup_dialog(words.open, start_reveal))
     dispatcher.include_router(create_reveal_router(start_discussion))
     dispatcher.include_router(create_discussion_router(words.open, log))
     messages = MockMessageManager()
@@ -227,9 +227,7 @@ async def test_the_whole_game_from_setup_to_the_final_screen(table: Table) -> No
 
     dealt = table.games.stored
     assert [player.name for player in dealt.players] == ["Аня", "Борис"]
-    assert dealt.status is GameStatus.SETUP
-
-    await start_reveal(table.bot, table.games, dealt)
+    assert dealt.status is GameStatus.REVEAL
 
     await table.press(Buttons.SHOW_CARD)
     await table.press(Buttons.NEXT_PLAYER)
