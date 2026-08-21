@@ -1,5 +1,6 @@
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from dataclasses import dataclass
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -8,9 +9,23 @@ from sqlalchemy.orm import joinedload
 from undercover.db.models import Category, Word
 
 
+@dataclass(frozen=True, slots=True)
+class CategoryOption:
+    id: int
+    title: str
+
+
 class WordsRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def list_playable_categories(self) -> Sequence[CategoryOption]:
+        result = await self._session.execute(
+            select(Category.id, Category.title)
+            .where(Category.is_active, Category.words.any(Word.is_active))
+            .order_by(Category.title)
+        )
+        return [CategoryOption(id=row.id, title=row.title) for row in result]
 
     async def get_random_active_word(self, category_id: int | None = None) -> Word | None:
         candidate = (

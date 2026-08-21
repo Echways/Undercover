@@ -130,3 +130,44 @@ async def test_picks_different_words_across_calls(db_session: AsyncSession) -> N
 
     assert all(word is not None for word in words)
     assert len({word.text for word in words if word is not None}) > 1
+
+
+async def test_lists_only_categories_that_can_be_played(db_session: AsyncSession) -> None:
+    food = await add_category(db_session, "food", {"пицца": ["её режут"]})
+    await add_category(db_session, "cities", {"Париж": ["там башня"]}, is_active=False)
+    await add_category(db_session, "jobs", {"пекарь": ["он у печи"]}, words_active=False)
+    await add_category(db_session, "empty", {})
+
+    listed = await WordsRepository(db_session).list_playable_categories()
+
+    assert [(category.id, category.title) for category in listed] == [(food.id, "Food")]
+
+
+async def test_lists_categories_in_alphabetical_order(db_session: AsyncSession) -> None:
+    for slug in ("cities", "animals", "food"):
+        await add_category(db_session, slug, {f"слово-{slug}": ["подсказка"]})
+
+    listed = await WordsRepository(db_session).list_playable_categories()
+
+    assert [category.title for category in listed] == ["Animals", "Cities", "Food"]
+
+
+async def test_lists_each_category_once(db_session: AsyncSession) -> None:
+    await add_category(db_session, "food", {text: ["подсказка"] for text in "абв"})
+
+    listed = await WordsRepository(db_session).list_playable_categories()
+
+    assert len(listed) == 1
+
+
+async def test_lists_nothing_on_empty_catalog(db_session: AsyncSession) -> None:
+    assert await WordsRepository(db_session).list_playable_categories() == []
+
+
+async def test_lists_categories_in_a_single_query(db_session: AsyncSession) -> None:
+    await add_category(db_session, "food", {"пицца": ["её режут"]})
+
+    with executed_statements() as statements:
+        await WordsRepository(db_session).list_playable_categories()
+
+    assert len(statements) == 1, statements

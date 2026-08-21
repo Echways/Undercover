@@ -27,7 +27,7 @@ from undercover.media.card_renderer import (
     render_speaker_card,
 )
 from undercover.redis.game_state import GameStateRepository
-from undercover.texts import Buttons, Discussion, Errors
+from undercover.texts import Buttons, Discussion, Errors, empty_catalog_text
 from undercover.utils.secure_random import secure_rng
 
 logger = logging.getLogger(__name__)
@@ -164,10 +164,11 @@ def create_discussion_router(open_words: WordsSourceFactory, log_game: GameLogWr
                     spies_count=sum(player.is_spy for player in state.players),
                     words=words,
                     rng=secure_rng(),
+                    category_ids=state.category_ids,
                 )
         except EmptyWordCatalogError:
             logger.exception("партия %s: следующую не собрать, словарь пуст", state.session_id)
-            await callback.answer(Errors.EMPTY_CATALOG, show_alert=True)
+            await callback.answer(empty_catalog_text(state.category_ids), show_alert=True)
             return
         except GameRulesError:
             logger.exception("партия %s: её состав больше не по правилам", state.session_id)

@@ -383,6 +383,20 @@ async def test_assembles_a_playable_session(players_count: int) -> None:
     assert set(state.hint_by_spy) == {p.order_index for p in state.players if p.is_spy}
 
 
+async def test_remembers_the_chosen_categories() -> None:
+    source = FakeWordsSource({2: pizza(word_id=42)})
+
+    state = await make_session(words=source, category_ids=[2])
+
+    assert state.category_ids == [2]
+
+
+async def test_a_session_without_a_choice_keeps_the_whole_catalog() -> None:
+    state = await make_session()
+
+    assert state.category_ids == []
+
+
 async def test_keeps_the_host_and_the_chat_of_the_setup() -> None:
     state = await make_session(chat_id=-4242, host_user_id=13)
 

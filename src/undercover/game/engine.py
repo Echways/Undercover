@@ -127,5 +127,6 @@ async def create_session(
         players=players,
         word_id=word.word_id,
         word_text=word.text,
+        category_ids=list(category_ids or ()),
         hint_by_spy=assign_hints(players, word, rng),
     )

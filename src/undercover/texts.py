@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import Final
 
 from undercover.game.engine import MAX_NAME_LENGTH, MAX_PLAYERS, MIN_PLAYERS
@@ -32,11 +33,22 @@ class Setup:
         "Порядок ввода тот же, в котором телефон пойдёт по кругу.\n\n"
         "Введено {entered} из {players_count}:\n{names_list}"
     )
+    ASK_CATEGORIES: Final = (
+        "Откуда брать слово?\n\n"
+        "Отметьте категории — можно несколько. Без отметок сыграем по всему "
+        "словарю.\n\n"
+        "Сейчас: {chosen_categories}"
+    )
     CONFIRM_START: Final = (
         "Состав собран.\n\n"
         "Игроков: {players_count}, из них шпионов: {spies_count}.\n"
+        "Слова: {chosen_categories}.\n"
         "Порядок раздачи карточек:\n{names_list}"
     )
+
+    ALL_CATEGORIES: Final = "весь словарь"
+    CATEGORY_CHOSEN: Final = "• {item[title]}"
+    CATEGORY_FREE: Final = "{item[title]}"
 
     NO_NAMES_YET: Final = "пока пусто"
     ERROR_PREFIX: Final = "{error}"
@@ -94,6 +106,9 @@ class Errors:
         "Словарь игры пуст — загадать нечего. Сообщите администратору бота; "
         "состав никуда не денется."
     )
+    EMPTY_CATEGORIES: Final = (
+        "В выбранных категориях не осталось слов. Отметьте другие — состав никуда не денется."
+    )
     UNEXPECTED: Final = "Что-то пошло не так. Попробуйте ещё раз — партия никуда не делась."
     STALE_BUTTON: Final = (
         "Эта кнопка осталась от прошлой партии. Отправьте /start, чтобы начать новую."
@@ -103,6 +118,8 @@ class Errors:
 
 class Buttons:
     UNDO_NAME: Final = "Убрать последнее"
+    CATEGORIES_DONE: Final = "Готово"
+    CHANGE_CATEGORIES: Final = "Категории"
     PLAY: Final = "Начать партию"
     RESTART: Final = "Собрать заново"
 
@@ -134,3 +151,7 @@ class Cards:
     RESULT_SPY_CAPTION: Final = "ШПИОН"
     RESULT_SPIES_CAPTION: Final = "ШПИОНЫ"
     RESULT_WORD_CAPTION: Final = "ЗАГАДАННОЕ СЛОВО"
+
+
+def empty_catalog_text(category_ids: Sequence[int]) -> str:
+    return Errors.EMPTY_CATEGORIES if category_ids else Errors.EMPTY_CATALOG

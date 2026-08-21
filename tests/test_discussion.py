@@ -543,6 +543,27 @@ async def test_play_again_keeps_the_roster_and_deals_a_fresh_game(table: Table) 
     assert fresh.discussion_order == []
 
 
+async def test_play_again_keeps_the_chosen_categories(table: Table) -> None:
+    await finished(table, category_ids=[2, 5])
+
+    await table.press(Buttons.PLAY_AGAIN)
+
+    assert table.games.stored.category_ids == [2, 5]
+    assert table.words.asked_categories[-1] in (2, 5)
+
+
+async def test_play_again_without_words_in_the_chosen_categories_is_explained(
+    table: Table,
+) -> None:
+    old = await finished(table, category_ids=[2])
+    table.words.empty_categories = frozenset({2})
+
+    await table.press(Buttons.PLAY_AGAIN)
+
+    assert table.alerts[-1] == Errors.EMPTY_CATEGORIES
+    assert table.games.stored.session_id == old.session_id
+
+
 async def test_play_again_forgets_the_finished_game(table: Table) -> None:
     old = await finished(table)
 

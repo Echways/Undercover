@@ -48,6 +48,8 @@ class GameSessionState(BaseModel):
 
     word_text: str
 
+    category_ids: list[int] = Field(default_factory=list)
+
     hint_by_spy: dict[int, str] = Field(default_factory=dict)
 
     reveal_cursor: int = Field(default=0, ge=0)

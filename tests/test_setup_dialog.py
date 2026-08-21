@@ -1,3 +1,4 @@
+import inspect
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -14,10 +15,16 @@ from aiogram_dialog.test_tools.memory_storage import JsonMemoryStorage
 
 from fake_bot import FakeSession, make_bot
 from fake_games import FakeGameStateRepository
-from fake_words import HINTS, WORD, FakeWord, FakeWords, pizza
+from fake_words import HINTS, WORD, FakeWord, FakeWords, catalog, pizza
 from undercover.bot.routers.reveal import start_reveal
-from undercover.bot.routers.setup_dialog import Setup, create_setup_dialog
+from undercover.bot.routers.setup_dialog import (
+    MIN_CATEGORIES_TO_CHOOSE,
+    Catalog,
+    Setup,
+    create_setup_dialog,
+)
 from undercover.bot.routers.start import create_start_router
+from undercover.db.repositories.words import CategoryOption, WordsRepository
 from undercover.game.engine import (
     MAX_NAME_LENGTH,
     MAX_PLAYERS,
@@ -30,6 +37,8 @@ from undercover.texts import Setup as SetupTexts
 
 CHAT_ID: Final = 100500
 HOST_ID: Final = 777
+
+CATEGORIES: Final = ("Города", "Еда", "Профессии")
 
 NAMES: Final = (
     "Аня",
@@ -80,7 +89,11 @@ def words() -> FakeWords:
 
 
 @pytest.fixture
-async def table(words: FakeWords) -> Table:
+def picky_words() -> FakeWords:
+    return FakeWords(pizza(), categories=catalog(*CATEGORIES))
+
+
+async def open_table(words: FakeWords) -> Table:
     games = FakeGameStateRepository()
     dispatcher = Dispatcher(storage=JsonMemoryStorage(), games=games)
     dispatcher.include_router(create_start_router())
@@ -98,6 +111,16 @@ async def table(words: FakeWords) -> Table:
     )
     await table.send("/start")
     return table
+
+
+@pytest.fixture
+async def table(words: FakeWords) -> Table:
+    return await open_table(words)
+
+
+@pytest.fixture
+async def picky_table(picky_words: FakeWords) -> Table:
+    return await open_table(picky_words)
 
 
 def numbered(names: Sequence[str]) -> str:
@@ -120,6 +143,8 @@ async def fill(
     chosen = list(names or NAMES[:players_count])
     for name in chosen:
         await table.send(name)
+    if len(table.words.categories) >= MIN_CATEGORIES_TO_CHOOSE:
+        await table.click(Buttons.CATEGORIES_DONE)
     return chosen
 
 
@@ -172,20 +197,22 @@ async def test_confirmation_shows_the_deal_order(table: Table) -> None:
         SetupTexts.CONFIRM_START.format(
             players_count=4,
             spies_count=1,
+            chosen_categories=SetupTexts.ALL_CATEGORIES,
             names_list=numbered(names),
         )
         in table.text
     )
 
 
-async def test_the_dictionary_is_opened_once_and_released(table: Table) -> None:
+async def test_the_dictionary_is_opened_for_the_deal_and_released(table: Table) -> None:
     await fill(table, 4)
+    before = table.words.opened
 
-    assert (table.words.opened, table.words.closed) == (0, 0)
+    assert table.words.closed == before
 
     await table.click(Buttons.PLAY)
 
-    assert (table.words.opened, table.words.closed) == (1, 1)
+    assert (table.words.opened, table.words.closed) == (before + 1, before + 1)
 
 
 async def test_the_dialog_closes_after_the_game_is_built(table: Table) -> None:
@@ -377,3 +404,179 @@ async def test_a_word_without_hints_does_not_start_a_game(table: Table) -> None:
 
     assert Errors.EMPTY_CATALOG in table.text
     assert table.games.saves == 0
+
+
+def ask_categories(chosen: str) -> str:
+    return SetupTexts.ASK_CATEGORIES.format(chosen_categories=chosen)
+
+
+def marked(title: str) -> str:
+    return SetupTexts.CATEGORY_CHOSEN.format(item={"title": title})
+
+
+async def test_a_table_without_categories_never_sees_the_question(table: Table) -> None:
+    await fill(table, 3)
+
+    assert SetupTexts.CONFIRM_START.split("\n")[0] in table.text
+    assert "Откуда брать слово" not in table.text
+
+
+async def test_a_single_category_is_not_worth_asking_about() -> None:
+    table = await open_table(FakeWords(pizza(), categories=catalog("Еда")))
+
+    await fill(table, 3)
+    await table.click(Buttons.PLAY)
+
+    assert table.games.stored.category_ids == []
+
+
+async def test_the_question_comes_after_the_names(picky_table: Table) -> None:
+    await picky_table.send("3")
+    await picky_table.send("1")
+    for name in NAMES[:3]:
+        await picky_table.send(name)
+
+    assert ask_categories(SetupTexts.ALL_CATEGORIES) in picky_table.text
+    assert set(CATEGORIES) <= {text for text, _ in _buttons(picky_table)}
+
+
+async def test_an_unmarked_choice_means_the_whole_dictionary(picky_table: Table) -> None:
+    await fill(picky_table, 3)
+
+    await picky_table.click(Buttons.PLAY)
+
+    assert picky_table.games.stored.category_ids == []
+    assert picky_table.words.asked_categories == [None]
+
+
+async def test_marked_categories_reach_the_game(picky_table: Table) -> None:
+    await picky_table.send("3")
+    await picky_table.send("1")
+    for name in NAMES[:3]:
+        await picky_table.send(name)
+
+    await picky_table.click("Города")
+    await picky_table.click("Профессии")
+    await picky_table.click(Buttons.CATEGORIES_DONE)
+    await picky_table.click(Buttons.PLAY)
+
+    assert sorted(picky_table.games.stored.category_ids) == [1, 3]
+    assert picky_table.words.asked_categories[0] in (1, 3)
+
+
+async def test_a_marked_category_can_be_unmarked(picky_table: Table) -> None:
+    await picky_table.send("3")
+    await picky_table.send("1")
+    for name in NAMES[:3]:
+        await picky_table.send(name)
+
+    await picky_table.click("Еда")
+
+    assert ask_categories("Еда") in picky_table.text
+
+    await picky_table.click(marked("Еда"))
+
+    assert ask_categories(SetupTexts.ALL_CATEGORIES) in picky_table.text
+
+
+async def test_the_confirmation_names_the_chosen_categories(picky_table: Table) -> None:
+    await picky_table.send("3")
+    await picky_table.send("1")
+    names = list(NAMES[:3])
+    for name in names:
+        await picky_table.send(name)
+
+    await picky_table.click("Профессии")
+    await picky_table.click("Города")
+    await picky_table.click(Buttons.CATEGORIES_DONE)
+
+    assert (
+        SetupTexts.CONFIRM_START.format(
+            players_count=3,
+            spies_count=1,
+            chosen_categories="Города, Профессии",
+            names_list=numbered(names),
+        )
+        in picky_table.text
+    )
+
+
+async def test_restart_forgets_the_chosen_categories(picky_table: Table) -> None:
+    await picky_table.send("3")
+    await picky_table.send("1")
+    for name in NAMES[:3]:
+        await picky_table.send(name)
+    await picky_table.click("Еда")
+    await picky_table.click(Buttons.CATEGORIES_DONE)
+
+    await picky_table.click(Buttons.RESTART)
+    await fill(picky_table, 3)
+
+    assert ask_categories(SetupTexts.ALL_CATEGORIES) not in picky_table.text
+
+    await picky_table.click(Buttons.PLAY)
+
+    assert picky_table.games.stored.category_ids == []
+
+
+async def test_the_choice_can_be_reopened_from_the_confirmation(picky_table: Table) -> None:
+    names = await fill(picky_table, 3)
+
+    await picky_table.click(Buttons.CHANGE_CATEGORIES)
+
+    assert ask_categories(SetupTexts.ALL_CATEGORIES) in picky_table.text
+
+    await picky_table.click("Еда")
+    await picky_table.click(Buttons.CATEGORIES_DONE)
+    await picky_table.click(Buttons.PLAY)
+
+    assert [player.name for player in picky_table.games.stored.players] == names
+    assert picky_table.games.stored.category_ids == [2]
+
+
+async def test_a_table_without_a_choice_has_nothing_to_reopen(table: Table) -> None:
+    await fill(table, 3)
+
+    with pytest.raises(ValueError, match="No button"):
+        await table.click(Buttons.CHANGE_CATEGORIES)
+
+
+async def test_categories_left_without_words_are_explained(picky_table: Table) -> None:
+    picky_table.words.empty_categories = frozenset({1, 2, 3})
+    await picky_table.send("3")
+    await picky_table.send("1")
+    for name in NAMES[:3]:
+        await picky_table.send(name)
+    await picky_table.click("Еда")
+    await picky_table.click(Buttons.CATEGORIES_DONE)
+
+    await picky_table.click(Buttons.PLAY)
+
+    assert Errors.EMPTY_CATEGORIES in picky_table.text
+    assert picky_table.games.saves == 0
+
+    picky_table.words.empty_categories = frozenset()
+    await picky_table.click(Buttons.CHANGE_CATEGORIES)
+    await picky_table.click(Buttons.CATEGORIES_DONE)
+    await picky_table.click(Buttons.PLAY)
+
+    assert picky_table.games.saves == 1
+
+
+def _buttons(table: Table) -> list[tuple[str, str]]:
+    markup = table.screen.reply_markup
+    assert markup is not None
+    return [
+        (button.text, button.callback_data or "")
+        for row in markup.inline_keyboard
+        for button in row
+    ]
+
+
+def test_words_repository_fits_the_catalog_protocol() -> None:
+    expected = inspect.signature(Catalog.list_playable_categories)
+    actual = inspect.signature(WordsRepository.list_playable_categories)
+
+    assert actual.parameters == expected.parameters
+    assert inspect.iscoroutinefunction(WordsRepository.list_playable_categories)
+    assert all(hasattr(CategoryOption, name) for name in ("id", "title"))
