@@ -164,8 +164,6 @@ jobs:
           set -euo pipefail
           docker compose up -d postgres redis
           docker compose run --rm bot alembic upgrade head
-          docker compose run --rm bot undercover-seed
-          docker compose run --rm bot undercover-seed
           docker compose run --rm bot alembic check
           docker compose run --rm bot alembic downgrade base
 

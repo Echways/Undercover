@@ -22,7 +22,6 @@ dependencies = [
 
 [project.scripts]
 undercover-bot = "undercover.main:main"
-undercover-seed = "undercover.db.seed:main"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

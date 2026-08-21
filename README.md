@@ -28,11 +28,11 @@ cp .env.example .env          # вписать BOT_TOKEN и POSTGRES_PASSWORD
 docker compose up -d --build  # поднять бота, PostgreSQL и Redis
 
 docker compose run --rm bot alembic upgrade head  # схема базы
-docker compose run --rm bot undercover-seed       # словарь игры
 ```
 
-Порядок важен: без миграций боту некуда писать журнал партий, без сидера —
-нечего загадывать, и первая же партия упрётся в «словарь игры не готов».
+Схема приезжает пустой: слова и подсказки бот с собой не везёт, словарь
+наполняет владелец бота — см. «База данных и словарь». Пока в базе нет ни
+одного слова, первая же партия упрётся в «словарь игры не готов».
 
 Готово — отправьте боту `/start`.
 
@@ -86,14 +86,25 @@ alembic upgrade head                       # накатить схему
 alembic downgrade base                     # откатить всё
 alembic revision --autogenerate -m "..."   # новая миграция по изменённым моделям
 alembic check                              # модели разошлись с миграциями?
-undercover-seed                            # налить словарь (идемпотентно)
 ```
 
 Локально эти команды идут через `poetry run`, в контейнере — как есть
 (`docker compose run --rm bot alembic upgrade head`).
 
-Сидер можно запускать сколько угодно раз: он добавляет только недостающие слова
-и подсказки и не трогает то, что оператор выключил вручную.
+Словарь в поставку не входит: миграции создают пустые таблицы, а чем их
+наполнить — решает владелец бота. Данные живут в трёх таблицах: `categories`
+(`slug`, `title`), `words` (`category_id`, `text`, `difficulty` от 1 до 3) и
+`spy_hints` (`word_id`, `hint_text`). Бот берёт случайное слово среди активных
+(`is_active`) и выдаёт шпиону одну из его подсказок, так что у слова должна
+быть хотя бы одна.
+
+```bash
+docker compose exec postgres psql -U undercover -d undercover
+```
+
+Ненужное слово или целую категорию удобнее не удалять, а выключить:
+`UPDATE words SET is_active = false WHERE id = ...` — журнал партий ссылается
+на слова и переживёт выключение, но не удаление.
 
 ## Разработка без Docker
 
@@ -108,7 +119,6 @@ docker compose up -d postgres redis
 # и указать в .env: POSTGRES_HOST=localhost, REDIS_URL=redis://localhost:6379/0
 
 poetry run alembic upgrade head
-poetry run undercover-seed
 poetry run undercover-bot
 ```
 
