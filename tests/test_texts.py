@@ -13,6 +13,17 @@ CARD_RENDERER = Path(card_renderer.__file__)
 
 RUSSIAN = re.compile(r"[А-Яа-яЁё]")
 
+PICTOGRAPH = re.compile(
+    "["
+    "\u2190-\u21ff"  # стрелки
+    "\u25a0-\u25ff"  # геометрические фигуры
+    "\u2600-\u27bf"  # символы и дингбаты
+    "\u2b00-\u2bff"  # прочие стрелки и знаки
+    "\ufe0f"  # селектор эмодзи-начертания
+    "\U0001f000-\U0001faff"  # эмодзи
+    "]"
+)
+
 SCREENS = (
     texts.Start,
     texts.Setup,
@@ -21,6 +32,8 @@ SCREENS = (
     texts.Errors,
     texts.Cards,
 )
+
+TEXT_CLASSES = (*SCREENS, texts.Buttons)
 
 USER_FACING_CALLS = frozenset(
     {
@@ -85,12 +98,33 @@ def test_the_guard_leaves_logs_alone() -> None:
     assert literals_shown_to_players(logging_call) == []
 
 
+def shown_strings(source: type) -> list[tuple[str, str]]:
+    return [
+        (f"{source.__name__}.{name}", value)
+        for name, value in vars(source).items()
+        if not name.startswith("_") and isinstance(value, str)
+    ]
+
+
 def test_every_screen_speaks_russian() -> None:
     for screen in SCREENS:
         for name, value in vars(screen).items():
             if name.startswith("_"):
                 continue
             assert isinstance(value, str) and value.strip(), f"{screen.__name__}.{name}"
+
+
+@pytest.mark.parametrize("source", TEXT_CLASSES, ids=lambda source: source.__name__)
+def test_no_screen_wears_an_emoji(source: type) -> None:
+    dressed = [name for name, value in shown_strings(source) if PICTOGRAPH.search(value)]
+
+    assert dressed == [], f"пиктограмма в тексте — {dressed}"
+
+
+def test_the_guard_notices_an_emoji_that_slipped_back() -> None:
+    assert PICTOGRAPH.search("\u25b6\ufe0f Играть")
+    assert PICTOGRAPH.search("\U0001f575\ufe0f Показать шпиона")
+    assert not PICTOGRAPH.search("«Пётр» уже в составе — добавьте прозвище…")
 
 
 def test_the_brand_is_written_in_latin() -> None:

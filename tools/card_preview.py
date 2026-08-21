@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from undercover.media.card_renderer import (
+    CARD_SUFFIX,
     render_civilian_card,
     render_hidden_card,
     render_result_card,
@@ -20,27 +21,27 @@ logger = logging.getLogger("card_preview")
 
 @dataclass(frozen=True, slots=True)
 class Sample:
-    file_name: str
+    name: str
     payload: bytes
 
 
 def build_samples() -> tuple[Sample, ...]:
     return (
-        Sample("hidden.png", render_hidden_card("Аня")),
-        Sample("hidden_long_name.png", render_hidden_card("Владислав-Иннокентий")),
-        Sample("civilian.png", render_civilian_card("Аня", "пицца")),
-        Sample("civilian_long_word.png", render_civilian_card("Боря", "электрочайник")),
-        Sample("civilian_phrase.png", render_civilian_card("Гера", "новогодняя ёлка")),
-        Sample("spy_short_hint.png", render_spy_card("Аня", "его режут на куски")),
-        Sample("speaker.png", render_speaker_card("Аня")),
-        Sample("speaker_long_name.png", render_speaker_card("Владислав-Иннокентий")),
-        Sample("result_one_spy.png", render_result_card(("Аня",), "пицца")),
+        Sample("hidden", render_hidden_card("Аня")),
+        Sample("hidden_long_name", render_hidden_card("Владислав-Иннокентий")),
+        Sample("civilian", render_civilian_card("Аня", "пицца")),
+        Sample("civilian_long_word", render_civilian_card("Боря", "электрочайник")),
+        Sample("civilian_phrase", render_civilian_card("Гера", "новогодняя ёлка")),
+        Sample("spy_short_hint", render_spy_card("Аня", "его режут на куски")),
+        Sample("speaker", render_speaker_card("Аня")),
+        Sample("speaker_long_name", render_speaker_card("Владислав-Иннокентий")),
+        Sample("result_one_spy", render_result_card(("Аня",), "пицца")),
         Sample(
-            "result_many_spies.png",
+            "result_many_spies",
             render_result_card(("Аня", "Владислав-Иннокентий", "Гера"), "новогодняя ёлка"),
         ),
         Sample(
-            "spy_long_hint.png",
+            "spy_long_hint",
             render_spy_card(
                 "Владислав-Иннокентий",
                 "Это бывает горячим, его заказывают компанией и делят на всех, "
@@ -57,7 +58,7 @@ def main() -> None:
     destination.mkdir(parents=True, exist_ok=True)
 
     for sample in build_samples():
-        (destination / sample.file_name).write_bytes(sample.payload)
+        (destination / f"{sample.name}.{CARD_SUFFIX}").write_bytes(sample.payload)
 
     logger.info("Готово: %s", destination.resolve())
 

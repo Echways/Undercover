@@ -21,7 +21,11 @@ from undercover.game.engine import (
     create_session,
 )
 from undercover.game.models import GameSessionState, GameStatus
-from undercover.media.card_renderer import render_result_card, render_speaker_card
+from undercover.media.card_renderer import (
+    CARD_SUFFIX,
+    render_result_card,
+    render_speaker_card,
+)
 from undercover.redis.game_state import GameStateRepository
 from undercover.texts import Buttons, Discussion, Errors
 from undercover.utils.secure_random import secure_rng
@@ -103,7 +107,7 @@ def create_discussion_router(open_words: WordsSourceFactory, log_game: GameLogWr
             bot,
             state.chat_id,
             state.current_message_id,
-            as_photo(image, "result.png"),
+            as_photo(image, f"result.{CARD_SUFFIX}"),
             Discussion.FINAL_CAPTION.format(
                 title=(Discussion.SPY_TITLE_MANY if len(spies) > 1 else Discussion.SPY_TITLE_ONE),
                 spies=", ".join(spies),
@@ -194,7 +198,7 @@ async def _show_speaker(
         bot,
         state.chat_id,
         state.current_message_id,
-        as_photo(image, f"speaker_{cursor}.png"),
+        as_photo(image, f"speaker_{cursor}.{CARD_SUFFIX}"),
         Discussion.LAST_TALK_CAPTION.format(name=name)
         if is_last
         else Discussion.TALK_CAPTION.format(

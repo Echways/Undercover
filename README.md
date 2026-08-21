@@ -134,8 +134,8 @@ JSON для сборщика логов.
 
 Карточки можно посмотреть, не поднимая бота: `poetry run python
 tools/card_preview.py` раскладывает примеры всех экранов в `docs/preview`, а
-`poetry run python tools/card_templates.py` пересобирает фоны, которые лежат
-в пакете.
+`poetry run python tools/card_templates.py` печёт подложки из фотографий
+`assets/backgrounds/` и кладёт готовые в пакет.
 
 ## Проверки
 

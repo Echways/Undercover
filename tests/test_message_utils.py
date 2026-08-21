@@ -15,7 +15,9 @@ from undercover.bot.message_utils import photo_file_id, show_or_advance_card
 
 CAPTION = "Ход 1 из 4"
 KEYBOARD = InlineKeyboardMarkup(
-    inline_keyboard=[[InlineKeyboardButton(text="👁 Посмотреть", callback_data="reveal:show")]]
+    inline_keyboard=[
+        [InlineKeyboardButton(text="Посмотреть карточку", callback_data="reveal:show")]
+    ]
 )
 
 

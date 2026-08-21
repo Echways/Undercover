@@ -12,6 +12,7 @@ from undercover.bot.keyboards import single_button
 from undercover.bot.message_utils import as_photo, photo_file_id, show_or_advance_card
 from undercover.game.models import GameSessionState, GameStatus, PlayerState
 from undercover.media.card_renderer import (
+    CARD_SUFFIX,
     render_civilian_card,
     render_hidden_card,
     render_spy_card,
@@ -178,7 +179,7 @@ def _render_role_card(player: PlayerState, state: GameSessionState) -> bytes:
 
 
 def _card_filename(order_index: int) -> str:
-    return f"card_{order_index}.png"
+    return f"card_{order_index}.{CARD_SUFFIX}"
 
 
 def _keyboard(

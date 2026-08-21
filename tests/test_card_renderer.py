@@ -8,6 +8,7 @@ from PIL import Image, ImageChops
 from undercover.media.card_renderer import (
     BACKGROUND_NEUTRAL,
     BACKGROUND_UNDERCOVER,
+    CARD_FORMAT,
     CARD_SIZE,
     CONTENT_WIDTH,
     FONT_BOLD,
@@ -41,39 +42,43 @@ def open_card(payload: bytes) -> Image.Image:
     return image
 
 
-def test_hidden_card_is_a_png_of_card_size() -> None:
+def test_hidden_card_is_a_photo_of_card_size() -> None:
     with open_card(render_hidden_card("Аня")) as card:
-        assert card.format == "PNG"
+        assert card.format == CARD_FORMAT
         assert card.size == CARD_SIZE
 
 
-def test_civilian_card_is_a_png_of_card_size() -> None:
+def test_civilian_card_is_a_photo_of_card_size() -> None:
     with open_card(render_civilian_card("Аня", "пицца")) as card:
-        assert card.format == "PNG"
+        assert card.format == CARD_FORMAT
         assert card.size == CARD_SIZE
 
 
-def test_spy_card_is_a_png_of_card_size() -> None:
+def test_spy_card_is_a_photo_of_card_size() -> None:
     with open_card(render_spy_card("Аня", "её режут на куски")) as card:
-        assert card.format == "PNG"
+        assert card.format == CARD_FORMAT
         assert card.size == CARD_SIZE
 
 
-def test_speaker_card_is_a_png_of_card_size() -> None:
+def test_speaker_card_is_a_photo_of_card_size() -> None:
     with open_card(render_speaker_card("Аня")) as card:
-        assert card.format == "PNG"
+        assert card.format == CARD_FORMAT
         assert card.size == CARD_SIZE
 
 
-def test_result_card_is_a_png_of_card_size() -> None:
+def test_result_card_is_a_photo_of_card_size() -> None:
     with open_card(render_result_card(("Аня",), "пицца")) as card:
-        assert card.format == "PNG"
+        assert card.format == CARD_FORMAT
         assert card.size == CARD_SIZE
 
 
 def test_renderers_are_synchronous() -> None:
     for render in RENDERERS:
         assert not inspect.iscoroutinefunction(render), render.__name__
+
+
+# Карточка сохраняется в JPEG, поэтому пиксели фона совпадают лишь с точностью до артефактов.
+CODEC_TOLERANCE = 24
 
 
 def background_corner(file_name: str) -> tuple[int, ...]:
@@ -83,28 +88,37 @@ def background_corner(file_name: str) -> tuple[int, ...]:
     return corner
 
 
+def card_corner(payload: bytes) -> tuple[int, ...]:
+    with open_card(payload) as card:
+        corner = card.convert("RGB").getpixel((10, 10))
+    assert isinstance(corner, tuple)
+    return corner
+
+
+def assert_same_corner(payload: bytes, background_name: str) -> None:
+    corner = card_corner(payload)
+    expected = background_corner(background_name)
+    assert all(
+        abs(actual - wanted) <= CODEC_TOLERANCE
+        for actual, wanted in zip(corner, expected, strict=True)
+    ), f"{corner} != {expected}"
+
+
 def test_spy_card_is_drawn_on_the_undercover_background() -> None:
-    with open_card(render_spy_card("Аня", "её режут на куски")) as card:
-        assert card.getpixel((10, 10)) == background_corner(BACKGROUND_UNDERCOVER)
+    assert_same_corner(render_spy_card("Аня", "её режут на куски"), BACKGROUND_UNDERCOVER)
 
 
 def test_civilian_and_hidden_cards_are_drawn_on_the_neutral_background() -> None:
-    neutral = background_corner(BACKGROUND_NEUTRAL)
-
-    with open_card(render_civilian_card("Аня", "пицца")) as civilian:
-        assert civilian.getpixel((10, 10)) == neutral
-    with open_card(render_hidden_card("Аня")) as hidden:
-        assert hidden.getpixel((10, 10)) == neutral
+    assert_same_corner(render_civilian_card("Аня", "пицца"), BACKGROUND_NEUTRAL)
+    assert_same_corner(render_hidden_card("Аня"), BACKGROUND_NEUTRAL)
 
 
 def test_speaker_card_is_drawn_on_the_neutral_background() -> None:
-    with open_card(render_speaker_card("Аня")) as card:
-        assert card.getpixel((10, 10)) == background_corner(BACKGROUND_NEUTRAL)
+    assert_same_corner(render_speaker_card("Аня"), BACKGROUND_NEUTRAL)
 
 
 def test_result_card_is_drawn_on_the_undercover_background() -> None:
-    with open_card(render_result_card(("Аня",), "пицца")) as card:
-        assert card.getpixel((10, 10)) == background_corner(BACKGROUND_UNDERCOVER)
+    assert_same_corner(render_result_card(("Аня",), "пицца"), BACKGROUND_UNDERCOVER)
 
 
 def test_spy_and_civilian_cards_of_one_player_differ() -> None:
@@ -178,11 +192,13 @@ LAYOUT_CASES: tuple[tuple[Callable[..., bytes], tuple[object, ...], str], ...] =
 
 
 def content_box(payload: bytes, background_name: str) -> tuple[int, int, int, int]:
+    """Рамка нарисованного: всё, что отличается от подложки сильнее артефактов кодека."""
     with (
         open_card(payload) as card,
         Image.open(TEMPLATES_DIR / background_name) as background,
     ):
-        box = ImageChops.difference(card, background.convert("RGB")).getbbox()
+        difference = ImageChops.difference(card.convert("RGB"), background.convert("RGB"))
+        box = difference.convert("L").point(lambda level: level > CODEC_TOLERANCE).getbbox()
     assert box is not None, "на карточке ничего не нарисовано"
     return box
 
@@ -220,3 +236,30 @@ def test_wrap_keeps_words_whole_while_they_fit() -> None:
     font = _font(FONT_REGULAR, HINT_MAX_SIZE)
 
     assert _wrap("его режут на куски", font, CONTENT_WIDTH, 0) == ["его режут на куски"]
+
+
+WORDMARK_BAND = (SAFE_MARGIN, CARD_SIZE[1] - 200, CARD_SIZE[0] - SAFE_MARGIN, CARD_SIZE[1] - 60)
+
+WORDMARK_CASES: tuple[tuple[Callable[..., bytes], tuple[object, ...], str], ...] = (
+    (render_hidden_card, ("Аня",), BACKGROUND_NEUTRAL),
+    (render_civilian_card, ("Аня", "пицца"), BACKGROUND_NEUTRAL),
+    (render_speaker_card, ("Аня",), BACKGROUND_NEUTRAL),
+    (render_spy_card, ("Аня", "её режут на куски"), BACKGROUND_UNDERCOVER),
+    (render_result_card, (("Аня",), "пицца"), BACKGROUND_UNDERCOVER),
+)
+
+
+@pytest.mark.parametrize(("render", "args", "background"), WORDMARK_CASES)
+def test_every_card_is_signed_at_the_bottom(
+    render: Callable[..., bytes], args: tuple[object, ...], background: str
+) -> None:
+    with (
+        open_card(render(*args)) as card,
+        Image.open(TEMPLATES_DIR / background) as plate,
+    ):
+        band = ImageChops.difference(
+            card.convert("RGB").crop(WORDMARK_BAND),
+            plate.convert("RGB").crop(WORDMARK_BAND),
+        )
+
+    assert band.convert("L").point(lambda level: level > CODEC_TOLERANCE).getbbox() is not None
