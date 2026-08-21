@@ -13,7 +13,7 @@ from undercover.media.card_renderer import (
 
 LOG_FORMAT = "%(asctime)s %(levelname)-8s %(name)s: %(message)s"
 
-logger = logging.getLogger("generate_card_templates")
+logger = logging.getLogger("card_templates")
 
 RGB = tuple[int, int, int]
 
@@ -51,13 +51,15 @@ BACKGROUNDS: tuple[Background, ...] = (
 
 
 def _vertical_gradient(size: tuple[int, int], top: RGB, bottom: RGB) -> Image.Image:
-    width, height = size
+    _width, height = size
     column = Image.new("RGB", (1, height))
     for y in range(height):
         ratio = y / (height - 1)
         column.putpixel(
             (0, y),
-            tuple(round(start + (end - start) * ratio) for start, end in zip(top, bottom)),
+            tuple(
+                round(start + (end - start) * ratio) for start, end in zip(top, bottom, strict=True)
+            ),
         )
     return column.resize(size, Image.Resampling.BICUBIC)
 

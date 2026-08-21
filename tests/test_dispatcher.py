@@ -2,11 +2,13 @@ from typing import Final
 
 import pytest
 from aiogram import Bot, Dispatcher
-from aiogram.fsm.storage.redis import DefaultKeyBuilder, RedisStorage
+from aiogram.dispatcher.event.telegram import TelegramEventObserver
+from aiogram.fsm.storage.base import DefaultKeyBuilder
+from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.methods import SetMyCommands
+
 from conftest import settings_for
 from fake_bot import FakeSession, make_bot
-
 from undercover.bot.dispatcher import (
     create_bot,
     create_dispatcher,
@@ -49,7 +51,7 @@ def test_handlers_get_their_dependencies(
 
 
 def test_throttling_guards_both_messages_and_presses(dispatcher: Dispatcher) -> None:
-    def throttlers(observer: object) -> list[object]:
+    def throttlers(observer: TelegramEventObserver) -> list[object]:
         return [
             middleware
             for middleware in observer.outer_middleware

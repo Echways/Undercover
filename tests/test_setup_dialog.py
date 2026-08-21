@@ -10,14 +10,12 @@ from aiogram_dialog import setup_dialogs
 from aiogram_dialog.test_tools import BotClient, MockMessageManager
 from aiogram_dialog.test_tools.keyboard import InlineButtonTextLocator
 from aiogram_dialog.test_tools.memory_storage import JsonMemoryStorage
+
 from fake_bot import FakeSession, make_bot
 from fake_games import FakeGameStateRepository
 from fake_words import HINTS, WORD, FakeWord, FakeWords, pizza
-
 from undercover.bot.routers.setup_dialog import Setup, create_setup_dialog
 from undercover.bot.routers.start import create_start_router
-from undercover.texts import Buttons, Errors
-from undercover.texts import Setup as SetupTexts
 from undercover.game.engine import (
     MAX_NAME_LENGTH,
     MAX_PLAYERS,
@@ -25,13 +23,29 @@ from undercover.game.engine import (
     max_spies_count,
 )
 from undercover.game.models import GameStatus
+from undercover.texts import Buttons, Errors
+from undercover.texts import Setup as SetupTexts
 
 CHAT_ID: Final = 100500
 HOST_ID: Final = 777
 
 NAMES: Final = (
-    "Аня", "Борис", "Вера", "Галя", "Дима", "Егор", "Жанна", "Зина",
-    "Игорь", "Кира", "Лёша", "Марина", "Никита", "Оля", "Пётр", "Рита",
+    "Аня",
+    "Борис",
+    "Вера",
+    "Галя",
+    "Дима",
+    "Егор",
+    "Жанна",
+    "Зина",
+    "Игорь",
+    "Кира",
+    "Лёша",
+    "Марина",
+    "Никита",
+    "Оля",
+    "Пётр",
+    "Рита",
 )
 
 
@@ -72,9 +86,7 @@ async def table(words: FakeWords) -> Table:
     setup_dialogs(dispatcher, message_manager=messages)
 
     table = Table(
-        client=BotClient(
-            dispatcher, user_id=HOST_ID, chat_id=CHAT_ID, bot=make_bot(FakeSession())
-        ),
+        client=BotClient(dispatcher, user_id=HOST_ID, chat_id=CHAT_ID, bot=make_bot(FakeSession())),
         messages=messages,
         games=games,
         words=words,
@@ -209,9 +221,7 @@ async def test_a_rejected_count_does_not_move_the_dialog_on(table: Table) -> Non
 
 
 @pytest.mark.parametrize("answer", ["0", "3", "6", "-1"])
-async def test_spies_count_must_leave_civilians_in_the_majority(
-    table: Table, answer: str
-) -> None:
+async def test_spies_count_must_leave_civilians_in_the_majority(table: Table, answer: str) -> None:
     await table.send("6")
 
     await table.send(answer)

@@ -1,7 +1,7 @@
 import re
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cache
 from io import BytesIO
 from pathlib import Path
 from typing import Final, Protocol
@@ -62,12 +62,12 @@ HINT_MAX_LINES: Final = 4
 RESULT_WORD_MAX_LINES: Final = 2
 
 
-@lru_cache(maxsize=None)
+@cache
 def _font(file_name: str, size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(TEMPLATES_DIR / file_name, size)
 
 
-@lru_cache(maxsize=None)
+@cache
 def _background(file_name: str) -> Image.Image:
     with Image.open(TEMPLATES_DIR / file_name) as source:
         return source.convert("RGB")

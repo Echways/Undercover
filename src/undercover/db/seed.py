@@ -10,7 +10,7 @@ from undercover.db.models import Category, SpyHint, Word
 from undercover.db.session import create_engine, create_sessionmaker
 from undercover.log import DEFAULT_LEVEL, configure_logging
 
-logger = logging.getLogger("seed_words")
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,11 +210,11 @@ async def _upsert_categories(session: AsyncSession) -> dict[str, int]:
     statement = insert(Category).values(
         [{"slug": category.slug, "title": category.title} for category in CATALOG]
     )
-    statement = statement.on_conflict_do_update(
+    upsert = statement.on_conflict_do_update(
         index_elements=["slug"],
         set_={"title": statement.excluded.title},
     ).returning(Category.slug, Category.id)
-    return {slug: category_id for slug, category_id in await session.execute(statement)}
+    return {row.slug: row.id for row in await session.execute(upsert)}
 
 
 async def _upsert_words(
@@ -231,14 +231,11 @@ async def _upsert_words(
             for word in category.words
         ]
     )
-    statement = statement.on_conflict_do_update(
+    upsert = statement.on_conflict_do_update(
         index_elements=["category_id", "text"],
         set_={"difficulty": statement.excluded.difficulty},
     ).returning(Word.category_id, Word.text, Word.id)
-    return {
-        (category_id, text): word_id
-        for category_id, text, word_id in await session.execute(statement)
-    }
+    return {(row.category_id, row.text): row.id for row in await session.execute(upsert)}
 
 
 async def _upsert_hints(
@@ -260,14 +257,17 @@ async def _upsert_hints(
     return len(values)
 
 
-async def main() -> None:
+def main() -> None:
     configure_logging(DEFAULT_LEVEL)
     try:
-        settings = load_settings()
+        asyncio.run(_run())
     except ConfigurationError as error:
         logger.error("Сидинг невозможен: %s", error)
         raise SystemExit(1) from None
 
+
+async def _run() -> None:
+    settings = load_settings()
     engine = create_engine(settings)
     try:
         async with create_sessionmaker(engine)() as session:
@@ -284,4 +284,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

@@ -50,16 +50,15 @@ class FakeSession(BaseSession):
     async def close(self) -> None:
         return None
 
-    async def stream_content(
+    def stream_content(
         self,
         url: str,
         headers: dict[str, Any] | None = None,
         timeout: int = 30,
         chunk_size: int = 65536,
         raise_for_status: bool = True,
-    ) -> AsyncGenerator[bytes, None]:
+    ) -> AsyncGenerator[bytes]:
         raise NotImplementedError("тесты не качают файлы")
-        yield b""
 
     def calls(self, method: type[TelegramMethod[Any]]) -> list[Any]:
         return [request for request in self.requests if isinstance(request, method)]

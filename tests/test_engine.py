@@ -4,9 +4,12 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from random import Random
+from typing import Any
 
 import pytest
 
+from undercover.db.models import SpyHint, Word
+from undercover.db.repositories.words import WordsRepository
 from undercover.game.engine import (
     MAX_PLAYERS,
     MIN_PLAYERS,
@@ -20,7 +23,7 @@ from undercover.game.engine import (
     max_spies_count,
     pick_word,
 )
-from undercover.game.models import GameStatus, PlayerState, WordWithHints
+from undercover.game.models import GameSessionState, GameStatus, PlayerState, WordWithHints
 
 SEED = 20260821
 
@@ -266,7 +269,7 @@ async def test_raises_when_no_requested_category_has_words() -> None:
     with pytest.raises(EmptyWordCatalogError):
         await pick_word(source, [1, 2], rng=rng())
 
-    assert sorted(source.calls) == [1, 2]
+    assert set(source.calls) == {1, 2}
 
 
 async def test_raises_on_an_empty_catalog() -> None:
@@ -351,9 +354,12 @@ def test_rejects_a_deal_without_spies() -> None:
 
 
 async def make_session(
-    players_count: int = 6, spies_count: int = 1, generator: Random | None = None, **overrides
-):
-    defaults = {
+    players_count: int = 6,
+    spies_count: int = 1,
+    generator: Random | None = None,
+    **overrides: Any,
+) -> GameSessionState:
+    defaults: dict[str, Any] = {
         "chat_id": -100500,
         "host_user_id": 777,
         "player_names": names(players_count),
@@ -426,9 +432,6 @@ async def test_refuses_to_start_when_the_word_has_no_hints() -> None:
 
 
 def test_words_repository_fits_the_words_source_protocol() -> None:
-    from undercover.db.models import SpyHint, Word
-    from undercover.db.repositories.words import WordsRepository
-
     expected = inspect.signature(WordsSource.get_random_active_word)
     actual = inspect.signature(WordsRepository.get_random_active_word)
 

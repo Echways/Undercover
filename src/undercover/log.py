@@ -1,6 +1,6 @@
 import logging
 import sys
-from collections.abc import Iterable
+from collections.abc import Sequence
 from typing import Final
 
 import structlog
@@ -48,7 +48,7 @@ def configure_logging(level: str, *, json_output: bool | None = None) -> None:
     root.setLevel(level)
 
 
-def _render_chain(json_output: bool) -> Iterable[Processor]:
+def _render_chain(json_output: bool) -> Sequence[Processor]:
     if json_output:
         return [
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,

@@ -1,0 +1,21 @@
+name: Setup Python
+description: Install the interpreter, restore the pip cache and install the project with dev extras.
+
+inputs:
+  python-version:
+    required: false
+    default: '3.13'
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v7
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: pip
+        cache-dependency-path: pyproject.toml
+
+    - shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"

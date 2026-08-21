@@ -20,7 +20,7 @@ def restore_logging() -> Iterator[None]:
     root.setLevel(level)
 
 
-def run_with(monkeypatch: pytest.MonkeyPatch, error: Exception) -> None:
+def run_with(monkeypatch: pytest.MonkeyPatch, error: BaseException) -> None:
     async def _run() -> None:
         raise error
 
@@ -35,7 +35,8 @@ def fail_with(monkeypatch: pytest.MonkeyPatch, error: Exception) -> None:
 
 
 def logged(capsys: pytest.CaptureFixture[str]) -> dict[str, str]:
-    return json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    record: dict[str, str] = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    return record
 
 
 def test_a_broken_environment_is_explained(

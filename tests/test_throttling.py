@@ -3,8 +3,8 @@ from typing import Any, Final
 import pytest
 from aiogram import Bot, Dispatcher
 from aiogram.methods import AnswerCallbackQuery
-from fake_bot import HOST_ID, FakeSession, callback_update, make_bot, message_update
 
+from fake_bot import HOST_ID, FakeSession, callback_update, make_bot, message_update
 from undercover.bot.middlewares.throttling import ThrottlingMiddleware
 from undercover.texts import Errors
 
@@ -109,9 +109,7 @@ async def test_players_do_not_throttle_each_other(
     dispatcher: Dispatcher, bot: Bot, handled: list[int]
 ) -> None:
     await dispatcher.feed_update(bot, callback_update("press", update_id=1))
-    await dispatcher.feed_update(
-        bot, callback_update("press", update_id=2, user_id=OTHER_USER)
-    )
+    await dispatcher.feed_update(bot, callback_update("press", update_id=2, user_id=OTHER_USER))
 
     assert len(handled) == 2
 

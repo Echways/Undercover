@@ -2,7 +2,7 @@ from pathlib import Path
 
 from PIL import Image
 
-import generate_card_templates
+import card_templates
 from undercover.media.card_renderer import (
     BACKGROUND_NEUTRAL,
     BACKGROUND_UNDERCOVER,
@@ -26,7 +26,7 @@ def test_backgrounds_have_the_card_geometry() -> None:
 
 
 def test_committed_backgrounds_match_their_generator(tmp_path: Path) -> None:
-    generate_card_templates.write_backgrounds(tmp_path)
+    card_templates.write_backgrounds(tmp_path)
 
     for asset in (BACKGROUND_NEUTRAL, BACKGROUND_UNDERCOVER):
         assert (tmp_path / asset).read_bytes() == (TEMPLATES_DIR / asset).read_bytes(), asset

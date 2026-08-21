@@ -1,9 +1,0 @@
-.git
-.gitignore
-.env
-.venv
-__pycache__
-*.py[cod]
-.pytest_cache
-tests
-spy_bot_plan.md

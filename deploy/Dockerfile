@@ -23,8 +23,6 @@ RUN useradd --create-home --uid 1000 app
 USER app
 WORKDIR /home/app
 
-COPY alembic.ini ./
-COPY migrations ./migrations
-COPY scripts ./scripts
+COPY pyproject.toml ./
 
-CMD ["python", "-m", "undercover.main"]
+CMD ["undercover-bot"]

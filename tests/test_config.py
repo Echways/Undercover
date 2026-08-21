@@ -1,8 +1,7 @@
 import pytest
 
-from undercover.config import ConfigurationError, load_settings
-
 from conftest import SetEnv
+from undercover.config import ConfigurationError, load_settings
 
 
 def test_loads_valid_environment(set_env: SetEnv) -> None:
@@ -12,7 +11,9 @@ def test_loads_valid_environment(set_env: SetEnv) -> None:
     assert settings.bot_token.get_secret_value() == "123456789:AA-test-token"
     assert settings.postgres_port == 5432
     assert settings.log_level == "INFO"
-    assert settings.postgres_dsn == "postgresql+asyncpg://undercover:s3cret@postgres:5432/undercover"
+    assert (
+        settings.postgres_dsn == "postgresql+asyncpg://undercover:s3cret@postgres:5432/undercover"
+    )
 
 
 def test_postgres_dsn_escapes_credentials(set_env: SetEnv) -> None:

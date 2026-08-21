@@ -50,9 +50,7 @@ def make_state(word_id: int, **overrides: object) -> GameSessionState:
 
 
 async def stored_rows(session: AsyncSession) -> list[GameSessionLog]:
-    result = await session.execute(
-        select(GameSessionLog).where(GameSessionLog.chat_id == CHAT_ID)
-    )
+    result = await session.execute(select(GameSessionLog).where(GameSessionLog.chat_id == CHAT_ID))
     return list(result.scalars())
 
 

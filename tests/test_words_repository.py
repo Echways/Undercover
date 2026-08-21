@@ -16,7 +16,14 @@ pytestmark = pytest.mark.integration
 def executed_statements() -> Iterator[list[str]]:
     statements: list[str] = []
 
-    def record(conn, cursor, statement, parameters, context, executemany) -> None:
+    def record(
+        conn: object,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: object,
+        executemany: bool,
+    ) -> None:
         statements.append(statement)
 
     event.listen(Engine, "before_cursor_execute", record)
@@ -79,7 +86,10 @@ async def test_filters_by_category(db_session: AsyncSession) -> None:
 
     repository = WordsRepository(db_session)
 
-    assert (await repository.get_random_active_word(category_id=food.id)).text == "пицца"
+    picked = await repository.get_random_active_word(category_id=food.id)
+
+    assert picked is not None
+    assert picked.text == "пицца"
 
 
 async def test_ignores_inactive_words(db_session: AsyncSession) -> None:
@@ -116,6 +126,7 @@ async def test_picks_different_words_across_calls(db_session: AsyncSession) -> N
     await add_category(db_session, "food", {text: ["подсказка"] for text in "абвгд"})
     repository = WordsRepository(db_session)
 
-    picked = {(await repository.get_random_active_word()).text for _ in range(30)}
+    words = [await repository.get_random_active_word() for _ in range(30)]
 
-    assert len(picked) > 1
+    assert all(word is not None for word in words)
+    assert len({word.text for word in words if word is not None}) > 1

@@ -1,7 +1,8 @@
 import pytest
-from conftest import run_alembic
 from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import create_async_engine
+
+from conftest import run_alembic
 
 pytestmark = pytest.mark.integration
 
@@ -18,7 +19,7 @@ async def _table_names(dsn: str) -> set[str]:
 
 
 async def test_upgrade_creates_domain_tables(migrated_dsn: str) -> None:
-    assert DOMAIN_TABLES <= await _table_names(migrated_dsn)
+    assert await _table_names(migrated_dsn) >= DOMAIN_TABLES
 
 
 async def test_models_match_migrations(postgres_env: dict[str, str], migrated_dsn: str) -> None:

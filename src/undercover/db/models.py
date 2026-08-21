@@ -11,11 +11,12 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
-    text as sql_text,
     true,
 )
+from sqlalchemy import (
+    text as sql_text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-
 
 NAMING_CONVENTION = {
     "ix": "ix_%(table_name)s_%(column_0_N_name)s",
@@ -60,9 +61,7 @@ class Word(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.id", ondelete="CASCADE"))
     text: Mapped[str] = mapped_column(Text)
-    difficulty: Mapped[int] = mapped_column(
-        SmallInteger, default=1, server_default=sql_text("1")
-    )
+    difficulty: Mapped[int] = mapped_column(SmallInteger, default=1, server_default=sql_text("1"))
     is_active: Mapped[bool] = mapped_column(default=True, server_default=true())
 
     category: Mapped[Category] = relationship(back_populates="words")
@@ -94,7 +93,5 @@ class GameSessionLog(Base):
     players_count: Mapped[int] = mapped_column(SmallInteger)
     spies_count: Mapped[int] = mapped_column(SmallInteger)
     word_id: Mapped[int | None] = mapped_column(ForeignKey("words.id"))
-    started_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

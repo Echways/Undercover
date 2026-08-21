@@ -6,8 +6,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.methods import AnswerCallbackQuery, SendMessage
 from aiogram.types import CallbackQuery, Message, PollAnswer, Update, User
 from aiogram_dialog.api.exceptions import UnknownIntent
-from fake_bot import FakeSession, callback_update, make_bot, message_update
 
+from fake_bot import FakeSession, callback_update, make_bot, message_update
 from undercover.bot.errors import create_error_router
 from undercover.texts import Errors
 
@@ -53,9 +53,7 @@ async def test_a_broken_message_gets_an_explanation(bot: Bot, session: FakeSessi
     assert [sent.text for sent in session.calls(SendMessage)] == [Errors.UNEXPECTED]
 
 
-async def test_the_traceback_reaches_the_log(
-    bot: Bot, caplog: pytest.LogCaptureFixture
-) -> None:
+async def test_the_traceback_reaches_the_log(bot: Bot, caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.ERROR, logger="undercover.bot.errors"):
         await dispatcher_raising(BOOM).feed_update(bot, callback_update("press"))
 
@@ -71,9 +69,7 @@ async def test_a_stale_button_is_explained_without_a_traceback(
     with caplog.at_level(logging.INFO, logger="undercover.bot.errors"):
         await dispatcher_raising(stale).feed_update(bot, callback_update("press"))
 
-    assert [answer.text for answer in session.calls(AnswerCallbackQuery)] == [
-        Errors.STALE_BUTTON
-    ]
+    assert [answer.text for answer in session.calls(AnswerCallbackQuery)] == [Errors.STALE_BUTTON]
     assert [record.levelno for record in caplog.records] == [logging.INFO]
 
 

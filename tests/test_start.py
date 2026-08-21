@@ -8,10 +8,10 @@ from aiogram.types import Message
 from aiogram_dialog import setup_dialogs
 from aiogram_dialog.test_tools import BotClient, MockMessageManager
 from aiogram_dialog.test_tools.memory_storage import JsonMemoryStorage
+
 from fake_bot import CHAT_ID, HOST_ID, FakeSession, callback_update, make_bot
 from fake_games import FakeGameStateRepository
 from fake_words import FakeWords, pizza
-
 from undercover.bot.routers.setup_dialog import create_setup_dialog
 from undercover.bot.routers.start import create_start_router
 from undercover.texts import Setup as SetupTexts
@@ -48,9 +48,7 @@ async def table() -> Table:
     setup_dialogs(dispatcher, message_manager=messages)
 
     return Table(
-        client=BotClient(
-            dispatcher, user_id=HOST_ID, chat_id=CHAT_ID, bot=make_bot(session)
-        ),
+        client=BotClient(dispatcher, user_id=HOST_ID, chat_id=CHAT_ID, bot=make_bot(session)),
         messages=messages,
         session=session,
     )

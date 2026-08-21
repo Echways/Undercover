@@ -40,9 +40,7 @@ USER_FACING_CALLS = frozenset(
 
 
 def modules_with_handlers() -> list[Path]:
-    return sorted(
-        path for path in BOT_PACKAGE.rglob("*.py") if path.name != "__init__.py"
-    )
+    return sorted(path for path in BOT_PACKAGE.rglob("*.py") if path.name != "__init__.py")
 
 
 def called_name(call: ast.Call) -> str:

@@ -1,20 +1,17 @@
 import asyncio
-from logging.config import fileConfig
 
+from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from alembic import context
 from undercover.config import load_settings
 from undercover.db.models import Base
+from undercover.log import DEFAULT_LEVEL, configure_logging
+
+configure_logging(DEFAULT_LEVEL)
 
 config = context.config
-
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
-
-
 config.set_main_option("sqlalchemy.url", load_settings().postgres_dsn.replace("%", "%%"))
 
 target_metadata = Base.metadata

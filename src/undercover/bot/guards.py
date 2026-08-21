@@ -1,8 +1,8 @@
 from aiogram.types import CallbackQuery
 
-from undercover.texts import Errors
 from undercover.game.models import GameSessionState, GameStatus
 from undercover.redis.game_state import GameStateRepository
+from undercover.texts import Errors
 
 
 async def load_game_in_phase(

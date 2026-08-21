@@ -1,7 +1,8 @@
 from undercover.game.models import GameSessionState
+from undercover.redis.game_state import GameStateRepository
 
 
-class FakeGameStateRepository:
+class FakeGameStateRepository(GameStateRepository):
     def __init__(self, *states: GameSessionState) -> None:
         self._states = {state.session_id: state.model_copy(deep=True) for state in states}
         self.saves = 0
@@ -11,9 +12,7 @@ class FakeGameStateRepository:
         return None if state is None else state.model_copy(deep=True)
 
     async def load_active(self, chat_id: int) -> GameSessionState | None:
-        return next(
-            (state for state in self._states.values() if state.chat_id == chat_id), None
-        )
+        return next((state for state in self._states.values() if state.chat_id == chat_id), None)
 
     async def save(self, state: GameSessionState) -> None:
         self._states[state.session_id] = state.model_copy(deep=True)

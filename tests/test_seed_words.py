@@ -1,17 +1,17 @@
 import pytest
-from seed_words import seed_words
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from undercover.db.models import Category, SpyHint, Word
 from undercover.db.repositories.words import WordsRepository
+from undercover.db.seed import seed_words
 
 pytestmark = pytest.mark.integration
 
 
 async def catalog_counts(session: AsyncSession) -> tuple[int, int, int]:
     counts = [
-        await session.scalar(select(func.count()).select_from(model))
+        await session.scalar(select(func.count()).select_from(model)) or 0
         for model in (Category, Word, SpyHint)
     ]
     return counts[0], counts[1], counts[2]
@@ -28,10 +28,10 @@ async def test_every_category_has_eight_to_ten_words(db_session: AsyncSession) -
     await seed_words(db_session)
 
     counts = (
-        await db_session.execute(
-            select(func.count(Word.id)).group_by(Word.category_id)
-        )
-    ).scalars().all()
+        (await db_session.execute(select(func.count(Word.id)).group_by(Word.category_id)))
+        .scalars()
+        .all()
+    )
 
     assert counts and all(8 <= count <= 10 for count in counts), counts
 
@@ -40,10 +40,10 @@ async def test_every_word_has_two_to_three_hints(db_session: AsyncSession) -> No
     await seed_words(db_session)
 
     counts = (
-        await db_session.execute(
-            select(func.count(SpyHint.id)).group_by(SpyHint.word_id)
-        )
-    ).scalars().all()
+        (await db_session.execute(select(func.count(SpyHint.id)).group_by(SpyHint.word_id)))
+        .scalars()
+        .all()
+    )
 
     assert len(counts) == await db_session.scalar(select(func.count()).select_from(Word))
     assert all(2 <= count <= 3 for count in counts), counts

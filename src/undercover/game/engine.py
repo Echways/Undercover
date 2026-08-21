@@ -42,9 +42,7 @@ def max_spies_count(players_count: int) -> int:
     return max(1, players_count // 3)
 
 
-def assign_roles(
-    player_names: Sequence[str], spies_count: int, rng: Random
-) -> list[PlayerState]:
+def assign_roles(player_names: Sequence[str], spies_count: int, rng: Random) -> list[PlayerState]:
     players_count = len(player_names)
     if not MIN_PLAYERS <= players_count <= MAX_PLAYERS:
         raise GameRulesError(
@@ -54,8 +52,7 @@ def assign_roles(
     limit = max_spies_count(players_count)
     if not 1 <= spies_count <= limit:
         raise GameRulesError(
-            f"шпионов на {players_count} игроков должно быть от 1 до {limit}, "
-            f"а не {spies_count}"
+            f"шпионов на {players_count} игроков должно быть от 1 до {limit}, а не {spies_count}"
         )
 
     spies = set(rng.sample(range(players_count), spies_count))

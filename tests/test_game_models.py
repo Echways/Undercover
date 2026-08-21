@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 from pydantic import ValidationError
 
@@ -23,7 +25,7 @@ def test_players_with_equal_fields_are_equal() -> None:
 
 
 def test_word_with_hints_is_immutable() -> None:
-    word = WordWithHints(word_id=1, text="пицца", hints=["её режут на куски"])
+    word: Any = WordWithHints(word_id=1, text="пицца", hints=["её режут на куски"])
 
     with pytest.raises(ValidationError):
         word.text = "паста"

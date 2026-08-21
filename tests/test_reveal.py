@@ -4,17 +4,16 @@ import pytest
 from aiogram import Bot, Dispatcher
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import AnswerCallbackQuery, DeleteMessage, EditMessageMedia, SendPhoto
-from aiogram.types import BufferedInputFile, Update
+from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, Update
+
 from fake_bot import CHAT_ID, HOST_ID, SENT_MESSAGE_ID, FakeSession, callback_update, make_bot
 from fake_games import FakeGameStateRepository
-
 from undercover.bot.routers.reveal import (
     RevealAction,
     RevealCB,
     create_reveal_router,
     start_reveal,
 )
-from undercover.texts import Buttons, Errors, Reveal
 from undercover.game.models import GameSessionState, GameStatus, PlayerState
 from undercover.media.card_renderer import (
     render_civilian_card,
@@ -22,6 +21,7 @@ from undercover.media.card_renderer import (
     render_spy_card,
 )
 from undercover.redis.game_state import GameStateRepository
+from undercover.texts import Buttons, Errors, Reveal
 
 SESSION_ID = "11111111-1111-1111-1111-111111111111"
 NAMES = ("Аня", "Борис", "Вера", "Галя")
@@ -52,9 +52,7 @@ class RecordingStarter:
     def __init__(self) -> None:
         self.states: list[GameSessionState] = []
 
-    async def __call__(
-        self, bot: Bot, games: GameStateRepository, state: GameSessionState
-    ) -> None:
+    async def __call__(self, bot: Bot, games: GameStateRepository, state: GameSessionState) -> None:
         self.states.append(state.model_copy(deep=True))
 
 
@@ -80,7 +78,8 @@ def screens(session: FakeSession) -> list[Screen]:
         else:
             continue
 
-        assert markup is not None, "экран партии без кнопки — тупик"
+        assert isinstance(markup, InlineKeyboardMarkup), "экран партии без кнопки — тупик"
+        assert isinstance(photo, BufferedInputFile | str)
         button = markup.inline_keyboard[0][0]
         assert button.callback_data is not None
         result.append(
@@ -101,9 +100,7 @@ def hidden_screen(order_index: int) -> Screen:
             position=order_index + 1, total=len(NAMES), name=NAMES[order_index]
         ),
         button_text=Buttons.SHOW_CARD,
-        button=RevealCB(
-            action=RevealAction.SHOW, session_id=SESSION_ID, order_index=order_index
-        ),
+        button=RevealCB(action=RevealAction.SHOW, session_id=SESSION_ID, order_index=order_index),
     )
 
 
@@ -114,13 +111,11 @@ def role_screen(order_index: int) -> Screen:
         photo=render_spy_card(name, HINT)
         if order_index == SPY_INDEX
         else render_civilian_card(name, WORD),
-        caption=(
-            Reveal.LAST_VIEWED_CAPTION if is_last else Reveal.VIEWED_CAPTION
-        ).format(name=name),
-        button_text=Buttons.START_DISCUSSION if is_last else Buttons.NEXT_PLAYER,
-        button=RevealCB(
-            action=RevealAction.NEXT, session_id=SESSION_ID, order_index=order_index
+        caption=(Reveal.LAST_VIEWED_CAPTION if is_last else Reveal.VIEWED_CAPTION).format(
+            name=name
         ),
+        button_text=Buttons.START_DISCUSSION if is_last else Buttons.NEXT_PLAYER,
+        button=RevealCB(action=RevealAction.NEXT, session_id=SESSION_ID, order_index=order_index),
     )
 
 
@@ -210,9 +205,7 @@ async def test_discussion_starts_strictly_after_the_last_player(
     assert len(screens(game.session)) == shown, "экран обсуждения рисует уже другая фаза"
 
 
-async def test_first_card_starts_the_reveal_phase(
-    game: Game, state: GameSessionState
-) -> None:
+async def test_first_card_starts_the_reveal_phase(game: Game, state: GameSessionState) -> None:
     state.status = GameStatus.SETUP
     state.current_message_id = None
 
@@ -271,14 +264,10 @@ async def test_card_cannot_be_opened_twice(game: Game, state: GameSessionState) 
     assert len(screens(game.session)) == shown
 
 
-async def test_turn_cannot_be_skipped_without_looking(
-    game: Game, state: GameSessionState
-) -> None:
+async def test_turn_cannot_be_skipped_without_looking(game: Game, state: GameSessionState) -> None:
     await start_reveal(game.bot, game.games, state)
 
-    await game.tap(
-        RevealCB(action=RevealAction.NEXT, session_id=SESSION_ID, order_index=0)
-    )
+    await game.tap(RevealCB(action=RevealAction.NEXT, session_id=SESSION_ID, order_index=0))
 
     assert game.alerts[-1] == Reveal.NOT_VIEWED_YET
     assert game.games.stored.reveal_cursor == 0
@@ -286,9 +275,7 @@ async def test_turn_cannot_be_skipped_without_looking(
 
 
 async def test_unknown_session_is_reported(game: Game) -> None:
-    await game.tap(
-        RevealCB(action=RevealAction.SHOW, session_id="нет-такой", order_index=0)
-    )
+    await game.tap(RevealCB(action=RevealAction.SHOW, session_id="нет-такой", order_index=0))
 
     assert game.alerts == [Errors.SESSION_NOT_FOUND]
     assert not screens(game.session)

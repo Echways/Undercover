@@ -10,7 +10,6 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 from undercover.bot.guards import load_game_in_phase
 from undercover.bot.keyboards import single_button
 from undercover.bot.message_utils import as_photo, photo_file_id, show_or_advance_card
-from undercover.texts import Buttons, Errors, Reveal
 from undercover.game.models import GameSessionState, GameStatus, PlayerState
 from undercover.media.card_renderer import (
     render_civilian_card,
@@ -18,6 +17,7 @@ from undercover.media.card_renderer import (
     render_spy_card,
 )
 from undercover.redis.game_state import GameStateRepository
+from undercover.texts import Buttons, Errors, Reveal
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +63,9 @@ def create_reveal_router(start_discussion: PhaseStarter) -> Router:
             return
 
         is_last = state.reveal_cursor == len(state.players) - 1
-        caption = (
-            Reveal.LAST_VIEWED_CAPTION if is_last else Reveal.VIEWED_CAPTION
-        ).format(name=player.name)
+        caption = (Reveal.LAST_VIEWED_CAPTION if is_last else Reveal.VIEWED_CAPTION).format(
+            name=player.name
+        )
         image = await asyncio.to_thread(_render_role_card, player, state)
 
         message = await show_or_advance_card(
@@ -126,7 +126,8 @@ async def _show_hidden_card(
     bot: Bot, games: GameStateRepository, state: GameSessionState, order_index: int
 ) -> None:
     player = state.players[order_index]
-    image = player.card_file_id or await asyncio.to_thread(render_hidden_card, player.name)
+    cached = player.card_file_id
+    image = cached if cached else await asyncio.to_thread(render_hidden_card, player.name)
 
     message = await show_or_advance_card(
         bot,

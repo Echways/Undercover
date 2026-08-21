@@ -5,10 +5,10 @@ from typing import cast
 
 import pytest
 from aiogram import Dispatcher
-from conftest import SetEnv
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from conftest import SetEnv
 from undercover.config import Settings, load_settings
 from undercover.di import AppDependencies, DependencyUnavailableError, build_dependencies
 from undercover.redis.game_state import GameStateRepository
@@ -35,8 +35,11 @@ class _StubEngine:
 
 
 class _StubRedis:
-    def __init__(self, failure: Exception | None = None) -> None:
+    def __init__(
+        self, failure: Exception | None = None, close_failure: Exception | None = None
+    ) -> None:
         self._failure = failure
+        self._close_failure = close_failure
         self.closed = False
 
     async def ping(self) -> bool:
@@ -45,6 +48,8 @@ class _StubRedis:
         return True
 
     async def aclose(self) -> None:
+        if self._close_failure is not None:
+            raise self._close_failure
         self.closed = True
 
 
@@ -143,14 +148,9 @@ async def test_close_releases_both_resources(settings: Settings) -> None:
 
 async def test_close_disposes_engine_even_if_redis_fails(settings: Settings) -> None:
     engine = _StubEngine()
-    redis = _StubRedis()
-    redis.aclose = _raise
+    redis = _StubRedis(close_failure=OSError("broken pipe"))
 
     with pytest.raises(OSError):
         await _dependencies(settings, engine=engine, redis=redis).close()
 
     assert engine.disposed
-
-
-async def _raise() -> None:
-    raise OSError("broken pipe")

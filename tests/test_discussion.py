@@ -1,19 +1,19 @@
 import re
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
 import pytest
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.methods import AnswerCallbackQuery, EditMessageMedia, SendPhoto
-from aiogram.types import BufferedInputFile, Message
+from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, Message
 from aiogram_dialog import DialogManager, StartMode, setup_dialogs
 from aiogram_dialog.test_tools import BotClient, MockMessageManager
 from aiogram_dialog.test_tools.keyboard import InlineButtonTextLocator
 from aiogram_dialog.test_tools.memory_storage import JsonMemoryStorage
+
 from fake_bot import CHAT_ID, HOST_ID, FakeSession, callback_update, make_bot
 from fake_games import FakeGameStateRepository
 from fake_words import WORD, FakeWords, pizza
-
 from undercover.bot.routers.discussion import (
     FinalAction,
     FinalCB,
@@ -24,9 +24,9 @@ from undercover.bot.routers.discussion import (
 )
 from undercover.bot.routers.reveal import create_reveal_router, start_reveal
 from undercover.bot.routers.setup_dialog import Setup, create_setup_dialog
+from undercover.game.models import GameSessionState, GameStatus, PlayerState
 from undercover.texts import Buttons, Discussion, Errors
 from undercover.texts import Setup as SetupTexts
-from undercover.game.models import GameSessionState, GameStatus, PlayerState
 
 SESSION_ID: Final = "11111111-1111-1111-1111-111111111111"
 NAMES: Final = ("Аня", "Борис", "Вера", "Галя")
@@ -98,7 +98,8 @@ def cards(session: FakeSession) -> list[Card]:
         else:
             continue
 
-        assert markup is not None, "экран партии без кнопок — тупик"
+        assert isinstance(markup, InlineKeyboardMarkup), "экран партии без кнопок — тупик"
+        assert isinstance(photo, BufferedInputFile | str)
         result.append(
             Card(
                 photo=photo.data if isinstance(photo, BufferedInputFile) else photo,
@@ -147,9 +148,7 @@ class Table:
         await self.tap(self.card.callback_data(button_text), user_id=user_id)
 
     async def tap(self, callback_data: str, *, user_id: int = HOST_ID) -> None:
-        await self.dispatcher.feed_update(
-            self.bot, callback_update(callback_data, user_id=user_id)
-        )
+        await self.dispatcher.feed_update(self.bot, callback_update(callback_data, user_id=user_id))
 
     @property
     def alerts(self) -> list[str | None]:
@@ -190,9 +189,7 @@ async def table(words: FakeWords, log: RecordingLog) -> Table:
     setup_dialogs(dispatcher, message_manager=messages)
 
     return Table(
-        client=BotClient(
-            dispatcher, user_id=HOST_ID, chat_id=CHAT_ID, chat_type="group", bot=bot
-        ),
+        client=BotClient(dispatcher, user_id=HOST_ID, chat_id=CHAT_ID, chat_type="group", bot=bot),
         dispatcher=dispatcher,
         bot=bot,
         session=session,
@@ -203,14 +200,14 @@ async def table(words: FakeWords, log: RecordingLog) -> Table:
     )
 
 
-async def talking(table: Table, **overrides: object) -> GameSessionState:
+async def talking(table: Table, **overrides: Any) -> GameSessionState:
     state = make_state(**overrides)
     await table.games.save(state)
     await start_discussion(table.bot, table.games, state)
     return table.games.stored
 
 
-async def finished(table: Table, **overrides: object) -> GameSessionState:
+async def finished(table: Table, **overrides: Any) -> GameSessionState:
     await talking(table, **overrides)
     await table.press(Buttons.SHOW_SPIES)
     return table.games.stored
@@ -243,7 +240,9 @@ async def test_the_whole_game_from_setup_to_the_final_screen(table: Table) -> No
     assert talk.status is GameStatus.DISCUSSION
     assert sorted(talk.discussion_order) == [0, 1], "высказываются все и по разу"
     assert talk.discussion_cursor == 0
-    assert table.card.texts == (Buttons.NEXT_SPEAKER, Buttons.SHOW_SPIES)
+    opening = table.card
+
+    assert opening.texts == (Buttons.NEXT_SPEAKER, Buttons.SHOW_SPIES)
 
     await table.press(Buttons.NEXT_SPEAKER)
 
@@ -253,10 +252,12 @@ async def test_the_whole_game_from_setup_to_the_final_screen(table: Table) -> No
     await table.press(Buttons.SHOW_SPIES)
 
     spy = next(player.name for player in talk.players if player.is_spy)
-    assert table.card.caption == Discussion.FINAL_CAPTION.format(
+    final = table.card
+
+    assert final.caption == Discussion.FINAL_CAPTION.format(
         title=Discussion.SPY_TITLE_ONE, spies=spy, word=WORD
     )
-    assert table.card.texts == (Buttons.PLAY_AGAIN, Buttons.NEW_GAME)
+    assert final.texts == (Buttons.PLAY_AGAIN, Buttons.NEW_GAME)
     assert table.games.stored.status is GameStatus.FINISHED
     assert table.alerts == [None] * 6, "ни одно нажатие не отклонено"
     assert len(table.session.calls(SendPhoto)) == 1, "вся партия прожила в одном сообщении"
@@ -317,11 +318,9 @@ async def test_there_is_no_speaker_after_the_last_one(table: Table) -> None:
     last = len(NAMES) - 1
 
     await table.tap(
-        TalkCB(
-            action=TalkAction.NEXT, session_id=SESSION_ID, cursor=state.discussion_cursor
-        ).pack()
+        TalkCB(action=TalkAction.NEXT, session_id=SESSION_ID, cursor=state.discussion_cursor).pack()
     )
-    for cursor in range(1, last):
+    for _ in range(1, last):
         await table.press(Buttons.NEXT_SPEAKER)
 
     await table.tap(TalkCB(action=TalkAction.NEXT, session_id=SESSION_ID, cursor=last).pack())
@@ -423,8 +422,11 @@ async def test_play_again_forgets_the_finished_game(table: Table) -> None:
 
     await table.press(Buttons.PLAY_AGAIN)
 
+    active = await table.games.load_active(CHAT_ID)
+
     assert await table.games.load(old.session_id) is None
-    assert (await table.games.load_active(CHAT_ID)).session_id == table.games.stored.session_id
+    assert active is not None
+    assert active.session_id == table.games.stored.session_id
 
 
 async def test_play_again_reuses_the_cached_hidden_cards(table: Table) -> None:

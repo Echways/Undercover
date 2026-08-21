@@ -13,9 +13,9 @@ from undercover.media.card_renderer import (
 
 LOG_FORMAT = "%(asctime)s %(levelname)-8s %(name)s: %(message)s"
 
-DEFAULT_DESTINATION = Path("preview")
+DEFAULT_DESTINATION = Path("docs/preview")
 
-logger = logging.getLogger("preview_cards")
+logger = logging.getLogger("card_preview")
 
 
 @dataclass(frozen=True, slots=True)

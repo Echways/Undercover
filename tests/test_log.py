@@ -52,7 +52,7 @@ def test_a_traceback_reaches_the_log(capsys: pytest.CaptureFixture[str]) -> None
 def test_locals_never_leak_into_the_log(capsys: pytest.CaptureFixture[str]) -> None:
     configure_logging(DEFAULT_LEVEL, json_output=True)
     try:
-        secret = "424242:AA-token"
+        _secret = "424242:AA-token"
         raise ValueError("бум")
     except ValueError:
         logging.getLogger("undercover.demo").exception("упало")

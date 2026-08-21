@@ -2,6 +2,7 @@ import pytest
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import DeleteMessage, EditMessageMedia, SendPhoto
 from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
+
 from fake_bot import (
     CHAT_ID,
     FIRST_MESSAGE_ID,
@@ -10,7 +11,6 @@ from fake_bot import (
     make_bot,
     photo_message,
 )
-
 from undercover.bot.message_utils import photo_file_id, show_or_advance_card
 
 CAPTION = "Ход 1 из 4"

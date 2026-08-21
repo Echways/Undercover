@@ -3,7 +3,8 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import UpdateType
-from aiogram.fsm.storage.redis import DefaultKeyBuilder, RedisStorage
+from aiogram.fsm.storage.base import DefaultKeyBuilder
+from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import BotCommand
 from aiogram_dialog import setup_dialogs
 
@@ -13,11 +14,11 @@ from undercover.bot.routers.discussion import create_discussion_router, start_di
 from undercover.bot.routers.reveal import create_reveal_router
 from undercover.bot.routers.setup_dialog import create_setup_dialog
 from undercover.bot.routers.start import create_start_router
-from undercover.texts import Start
 from undercover.config import Settings
 from undercover.db.repositories.game_log import game_log_writer
 from undercover.db.repositories.words import words_source
 from undercover.di import AppDependencies
+from undercover.texts import Start
 
 logger = logging.getLogger(__name__)
 

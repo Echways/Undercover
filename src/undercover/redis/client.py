@@ -1,3 +1,6 @@
+from collections.abc import Awaitable
+from typing import cast
+
 from redis.asyncio import Redis
 
 from undercover.config import Settings
@@ -8,4 +11,4 @@ def create_redis_client(settings: Settings) -> Redis:
 
 
 async def check_redis_connection(client: Redis) -> None:
-    await client.ping()
+    await cast("Awaitable[bool]", client.ping())

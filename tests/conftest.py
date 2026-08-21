@@ -39,7 +39,7 @@ SetEnv = Callable[..., None]
 
 
 @pytest.fixture
-def set_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> SetEnv:
+def set_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> SetEnv:
     monkeypatch.chdir(tmp_path)
     for name in ENV_VARS:
         monkeypatch.delenv(name, raising=False)
@@ -65,7 +65,8 @@ def _skip_without_docker() -> None:
 
 
 def settings_for(**overrides: str) -> Settings:
-    return Settings(**{key.lower(): value for key, value in {**VALID_ENV, **overrides}.items()})
+    values = {key.lower(): value for key, value in {**VALID_ENV, **overrides}.items()}
+    return Settings.model_validate(values)
 
 
 @pytest.fixture(scope="session")

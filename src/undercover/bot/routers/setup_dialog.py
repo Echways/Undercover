@@ -12,7 +12,6 @@ from aiogram_dialog.widgets.kbd import Button, Row
 from aiogram_dialog.widgets.kbd.button import OnClick
 from aiogram_dialog.widgets.text import Const, Format, Multi
 
-from undercover.texts import Buttons, Errors, Setup as SetupTexts
 from undercover.game.engine import (
     MAX_NAME_LENGTH,
     MAX_PLAYERS,
@@ -24,6 +23,8 @@ from undercover.game.engine import (
     max_spies_count,
 )
 from undercover.redis.game_state import GameStateRepository
+from undercover.texts import Buttons, Errors
+from undercover.texts import Setup as SetupTexts
 from undercover.utils.secure_random import secure_rng
 
 logger = logging.getLogger(__name__)
@@ -166,8 +167,8 @@ def _parse_name(text: str) -> str:
 
 
 async def _on_input_error(
-    message: Message,
-    widget: ManagedTextInput[Any],
+    _message: Message,
+    _widget: ManagedTextInput[Any],
     dialog_manager: DialogManager,
     error: ValueError,
 ) -> None:
@@ -175,8 +176,8 @@ async def _on_input_error(
 
 
 async def _on_players_count(
-    message: Message,
-    widget: ManagedTextInput[int],
+    _message: Message,
+    _widget: ManagedTextInput[int],
     dialog_manager: DialogManager,
     count: int,
 ) -> None:
@@ -187,8 +188,8 @@ async def _on_players_count(
 
 
 async def _on_spies_count(
-    message: Message,
-    widget: ManagedTextInput[int],
+    _message: Message,
+    _widget: ManagedTextInput[int],
     dialog_manager: DialogManager,
     count: int,
 ) -> None:
@@ -201,9 +202,7 @@ async def _on_spies_count(
     if not 1 <= count <= limit:
         _set_error(
             dialog_manager,
-            SetupTexts.BAD_SPIES_COUNT.format(
-                players_count=draft.players_count, max_spies=limit
-            ),
+            SetupTexts.BAD_SPIES_COUNT.format(players_count=draft.players_count, max_spies=limit),
         )
         return
 
@@ -213,8 +212,8 @@ async def _on_spies_count(
 
 
 async def _on_player_name(
-    message: Message,
-    widget: ManagedTextInput[str],
+    _message: Message,
+    _widget: ManagedTextInput[str],
     dialog_manager: DialogManager,
     name: str,
 ) -> None:
@@ -234,7 +233,7 @@ async def _on_player_name(
 
 
 async def _on_undo_name(
-    callback: CallbackQuery, button: Button, dialog_manager: DialogManager
+    _callback: CallbackQuery, _button: Button, dialog_manager: DialogManager
 ) -> None:
     draft = SetupDraft.read(dialog_manager)
     dialog_manager.dialog_data[NAMES] = list(draft.names[:-1])
@@ -242,14 +241,14 @@ async def _on_undo_name(
 
 
 async def _on_restart(
-    callback: CallbackQuery, button: Button, dialog_manager: DialogManager
+    _callback: CallbackQuery, _button: Button, dialog_manager: DialogManager
 ) -> None:
     await _restart(dialog_manager)
 
 
 def _play(open_words: WordsSourceFactory) -> OnClick:
     async def on_play(
-        callback: CallbackQuery, button: Button, dialog_manager: DialogManager
+        callback: CallbackQuery, _button: Button, dialog_manager: DialogManager
     ) -> None:
         draft = SetupDraft.read(dialog_manager)
         if (

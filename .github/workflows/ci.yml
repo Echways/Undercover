@@ -1,0 +1,224 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  COVERAGE_MIN_LINE: '90'
+  COVERAGE_MIN_BRANCH: '85'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+  FORCE_COLOR: '1'
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+
+      - run: ruff check --output-format github .
+      - run: ruff format --check --diff .
+
+  types:
+    name: Types
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+
+      - run: mypy
+
+  test:
+    name: Unit (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.13', '3.14']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run
+        run: |
+          pytest -m "not integration" \
+            --junitxml=artifacts/junit/unit-${{ matrix.python-version }}.xml
+
+      - name: Summarise
+        if: always()
+        run: |
+          python .github/scripts/pytest_summary.py \
+            --title "Unit (${{ matrix.python-version }})" --fail-on-empty artifacts/junit
+
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: junit-unit-${{ matrix.python-version }}
+          path: artifacts/junit
+          retention-days: 7
+          if-no-files-found: warn
+
+  integration:
+    name: Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+
+      - name: Run
+        run: pytest -m integration --junitxml=artifacts/junit/integration.xml
+
+      - name: Summarise
+        if: always()
+        run: |
+          python .github/scripts/pytest_summary.py \
+            --title Integration --fail-on-empty artifacts/junit
+
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: junit-integration
+          path: artifacts/junit
+          retention-days: 7
+          if-no-files-found: warn
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+
+      - name: Test with coverage
+        run: |
+          pytest --cov \
+            --cov-report=xml:artifacts/coverage/coverage.xml \
+            --cov-report=html:artifacts/coverage/html \
+            --cov-report=term
+
+      - name: Gate
+        run: |
+          python .github/scripts/coverage_gate.py \
+            --min-line "$COVERAGE_MIN_LINE" --min-branch "$COVERAGE_MIN_BRANCH" \
+            artifacts/coverage
+
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage
+          path: artifacts/coverage
+          retention-days: 14
+          if-no-files-found: warn
+
+  image:
+    name: Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/Dockerfile
+          tags: undercover-bot:latest
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Environment
+        run: |
+          {
+            echo "BOT_TOKEN=123456789:AA-ci-smoke-token"
+            echo "POSTGRES_DB=undercover"
+            echo "POSTGRES_USER=undercover"
+            echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
+            echo "POSTGRES_HOST=postgres"
+            echo "POSTGRES_PORT=5432"
+            echo "REDIS_URL=redis://redis:6379/0"
+          } > .env
+
+      - name: Walk through the README
+        run: |
+          set -euo pipefail
+          docker compose up -d postgres redis
+          docker compose run --rm bot alembic upgrade head
+          docker compose run --rm bot undercover-seed
+          docker compose run --rm bot undercover-seed
+          docker compose run --rm bot alembic check
+          docker compose run --rm bot alembic downgrade base
+
+      - name: Report
+        if: always()
+        run: |
+          {
+            echo "## Image"
+            echo
+            echo "| Property | Value |"
+            echo "|---|---|"
+            echo "| Size | $(docker image inspect undercover-bot:latest \
+              --format '{{.Size}}' | numfmt --to=iec) |"
+            echo "| Entry point | \`$(docker image inspect undercover-bot:latest \
+              --format '{{join .Config.Cmd " "}}')\` |"
+            echo "| Runs as | \`$(docker run --rm undercover-bot:latest id -un)\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - if: always()
+        run: docker compose down -v
+
+  ci:
+    name: CI
+    if: always()
+    needs: [lint, types, test, integration, coverage, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          needs = json.loads(os.environ["NEEDS"])
+          bad = {
+              name: job["result"]
+              for name, job in needs.items()
+              if job["result"] not in ("success", "skipped")
+          }
+
+          rows = ["## " + ("CI failed" if bad else "CI passed"), "", "| Job | Result |", "|---|---|"]
+          rows += [f"| `{name}` | {job['result']} |" for name, job in sorted(needs.items())]
+          report = "\n".join(rows) + "\n"
+
+          print(report)
+          if path := os.environ.get("GITHUB_STEP_SUMMARY"):
+              with open(path, "a", encoding="utf-8") as handle:
+                  handle.write(report)
+
+          for name, result in bad.items():
+              print(f"::error title=CI::{name} -> {result}")
+          sys.exit(1 if bad else 0)
+          PY

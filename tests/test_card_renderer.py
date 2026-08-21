@@ -78,7 +78,9 @@ def test_renderers_are_synchronous() -> None:
 
 def background_corner(file_name: str) -> tuple[int, ...]:
     with Image.open(TEMPLATES_DIR / file_name) as background:
-        return background.convert("RGB").getpixel((10, 10))
+        corner = background.convert("RGB").getpixel((10, 10))
+    assert isinstance(corner, tuple)
+    return corner
 
 
 def test_spy_card_is_drawn_on_the_undercover_background() -> None:

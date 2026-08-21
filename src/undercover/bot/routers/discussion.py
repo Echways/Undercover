@@ -14,7 +14,6 @@ from undercover.bot.keyboards import button
 from undercover.bot.message_utils import as_photo, show_or_advance_card
 from undercover.bot.routers.reveal import start_reveal
 from undercover.bot.routers.setup_dialog import Setup, WordsSourceFactory
-from undercover.texts import Buttons, Discussion, Errors
 from undercover.game.engine import (
     EmptyWordCatalogError,
     GameRulesError,
@@ -24,6 +23,7 @@ from undercover.game.engine import (
 from undercover.game.models import GameSessionState, GameStatus
 from undercover.media.card_renderer import render_result_card, render_speaker_card
 from undercover.redis.game_state import GameStateRepository
+from undercover.texts import Buttons, Discussion, Errors
 from undercover.utils.secure_random import secure_rng
 
 logger = logging.getLogger(__name__)
@@ -105,9 +105,7 @@ def create_discussion_router(open_words: WordsSourceFactory, log_game: GameLogWr
             state.current_message_id,
             as_photo(image, "result.png"),
             Discussion.FINAL_CAPTION.format(
-                title=(
-                    Discussion.SPY_TITLE_MANY if len(spies) > 1 else Discussion.SPY_TITLE_ONE
-                ),
+                title=(Discussion.SPY_TITLE_MANY if len(spies) > 1 else Discussion.SPY_TITLE_ONE),
                 spies=", ".join(spies),
                 word=state.word_text,
             ),
@@ -178,9 +176,7 @@ def create_discussion_router(open_words: WordsSourceFactory, log_game: GameLogWr
     return router
 
 
-async def start_discussion(
-    bot: Bot, games: GameStateRepository, state: GameSessionState
-) -> None:
+async def start_discussion(bot: Bot, games: GameStateRepository, state: GameSessionState) -> None:
     state.status = GameStatus.DISCUSSION
     state.discussion_order = build_discussion_order(state.players, secure_rng())
     await _show_speaker(bot, games, state, 0)
@@ -251,13 +247,9 @@ async def _write_log(log_game: GameLogWriter, state: GameSessionState) -> None:
         logger.exception("партия %s: не записалась в журнал", state.session_id)
 
 
-def _speaker_keyboard(
-    state: GameSessionState, cursor: int, is_last: bool
-) -> InlineKeyboardMarkup:
+def _speaker_keyboard(state: GameSessionState, cursor: int, is_last: bool) -> InlineKeyboardMarkup:
     def talk_button(text: str, action: TalkAction) -> InlineKeyboardButton:
-        return button(
-            text, TalkCB(action=action, session_id=state.session_id, cursor=cursor)
-        )
+        return button(text, TalkCB(action=action, session_id=state.session_id, cursor=cursor))
 
     spies = [talk_button(Buttons.SHOW_SPIES, TalkAction.SPIES)]
     if is_last:
