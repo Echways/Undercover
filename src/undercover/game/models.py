@@ -56,6 +56,8 @@ class GameSessionState(BaseModel):
 
     discussion_cursor: int = Field(default=0, ge=0)
 
+    discussion_round: int = Field(default=1, ge=1)
+
     current_message_id: int | None = None
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

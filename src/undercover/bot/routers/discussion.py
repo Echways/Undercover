@@ -39,6 +39,7 @@ BROKEN_ORDER: Final = "порядок высказываний испорчен"
 
 class TalkAction(StrEnum):
     NEXT = "next"
+    ROUND = "round"
     SPIES = "spies"
 
 
@@ -84,6 +85,27 @@ def create_discussion_router(open_words: WordsSourceFactory, log_game: GameLogWr
             return
 
         await _show_speaker(bot, games, state, next_cursor)
+        await callback.answer()
+
+    @router.callback_query(TalkCB.filter(F.action == TalkAction.ROUND))
+    async def cb_another_round(
+        callback: CallbackQuery,
+        callback_data: TalkCB,
+        games: GameStateRepository,
+        bot: Bot,
+    ) -> None:
+        state = await _in_discussion(callback, callback_data.session_id, games)
+        if state is None:
+            return
+        if not _round_is_over(state, callback_data.cursor):
+            await callback.answer(Errors.STALE_TURN, show_alert=True)
+            return
+        if _speaker_name(state, 0) is None:
+            await _report_broken(callback, state)
+            return
+
+        state.discussion_round += 1
+        await _show_speaker(bot, games, state, 0)
         await callback.answer()
 
     @router.callback_query(TalkCB.filter(F.action == TalkAction.SPIES))
@@ -199,10 +221,13 @@ async def _show_speaker(
         state.chat_id,
         state.current_message_id,
         as_photo(image, f"speaker_{cursor}.{CARD_SUFFIX}"),
-        Discussion.LAST_TALK_CAPTION.format(name=name)
-        if is_last
-        else Discussion.TALK_CAPTION.format(
-            position=cursor + 1, total=len(state.discussion_order), name=name
+        _round_prefix(state)
+        + (
+            Discussion.LAST_TALK_CAPTION.format(name=name)
+            if is_last
+            else Discussion.TALK_CAPTION.format(
+                position=cursor + 1, total=len(state.discussion_order), name=name
+            )
         ),
         _speaker_keyboard(state, cursor, is_last),
     )
@@ -237,6 +262,16 @@ def _speaker_name(state: GameSessionState, cursor: int) -> str | None:
     return state.players[order_index].name
 
 
+def _round_is_over(state: GameSessionState, cursor: int) -> bool:
+    return cursor == state.discussion_cursor == len(state.discussion_order) - 1
+
+
+def _round_prefix(state: GameSessionState) -> str:
+    if state.discussion_round == 1:
+        return ""
+    return Discussion.ROUND_PREFIX.format(round=state.discussion_round)
+
+
 async def _report_broken(
     callback: CallbackQuery, state: GameSessionState, reason: str = BROKEN_ORDER
 ) -> None:
@@ -255,11 +290,13 @@ def _speaker_keyboard(state: GameSessionState, cursor: int, is_last: bool) -> In
     def talk_button(text: str, action: TalkAction) -> InlineKeyboardButton:
         return button(text, TalkCB(action=action, session_id=state.session_id, cursor=cursor))
 
-    spies = [talk_button(Buttons.SHOW_SPIES, TalkAction.SPIES)]
-    if is_last:
-        return InlineKeyboardMarkup(inline_keyboard=[spies])
+    forward = (
+        talk_button(Buttons.ANOTHER_ROUND, TalkAction.ROUND)
+        if is_last
+        else talk_button(Buttons.NEXT_SPEAKER, TalkAction.NEXT)
+    )
     return InlineKeyboardMarkup(
-        inline_keyboard=[[talk_button(Buttons.NEXT_SPEAKER, TalkAction.NEXT)], spies]
+        inline_keyboard=[[forward], [talk_button(Buttons.SHOW_SPIES, TalkAction.SPIES)]]
     )
 
 

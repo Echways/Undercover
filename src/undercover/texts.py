@@ -72,6 +72,7 @@ class Reveal:
 
 
 class Discussion:
+    ROUND_PREFIX: Final = "Круг {round}. "
     TALK_CAPTION: Final = "Ход {position} из {total}. Говорит: {name}"
     LAST_TALK_CAPTION: Final = "Последним говорит {name}. Дальше — ищите шпиона."
 
@@ -110,6 +111,7 @@ class Buttons:
     START_DISCUSSION: Final = "Перейти к обсуждению"
 
     NEXT_SPEAKER: Final = "Следующий игрок"
+    ANOTHER_ROUND: Final = "Ещё круг"
     SHOW_SPIES: Final = "Раскрыть карты"
     PLAY_AGAIN: Final = "Ещё партия"
     NEW_GAME: Final = "Новый состав"

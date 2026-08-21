@@ -213,6 +213,13 @@ async def finished(table: Table, **overrides: Any) -> GameSessionState:
     return table.games.stored
 
 
+async def all_spoken(table: Table, **overrides: Any) -> GameSessionState:
+    state = await talking(table, **overrides)
+    for _ in range(len(state.discussion_order) - 1):
+        await table.press(Buttons.NEXT_SPEAKER)
+    return table.games.stored
+
+
 def spoken_names(table: Table) -> list[str]:
     return [name for card in table.cards for name in NAMES if name in card.caption]
 
@@ -245,7 +252,10 @@ async def test_the_whole_game_from_setup_to_the_final_screen(table: Table) -> No
     await table.press(Buttons.NEXT_SPEAKER)
 
     assert table.games.stored.discussion_cursor == 1
-    assert table.card.texts == (Buttons.SHOW_SPIES,), "все высказались — остаётся искать шпиона"
+    assert table.card.texts == (
+        Buttons.ANOTHER_ROUND,
+        Buttons.SHOW_SPIES,
+    ), "все высказались — остаётся пойти на второй круг или искать шпиона"
 
     await table.press(Buttons.SHOW_SPIES)
 
@@ -285,7 +295,7 @@ async def test_every_player_speaks_once_and_then_the_hunt_begins(table: Table) -
 
     last = NAMES[state.discussion_order[-1]]
     assert table.card.caption == Discussion.LAST_TALK_CAPTION.format(name=last)
-    assert table.card.texts == (Buttons.SHOW_SPIES,)
+    assert table.card.texts == (Buttons.ANOTHER_ROUND, Buttons.SHOW_SPIES)
     assert sorted(spoken_names(table)) == sorted(NAMES)
 
 
@@ -334,6 +344,124 @@ async def test_a_broken_speaking_order_is_reported(table: Table) -> None:
 
     assert table.alerts == [Errors.BROKEN_SESSION]
     assert not table.cards
+
+
+async def test_another_round_waits_until_everyone_has_spoken(table: Table) -> None:
+    state = await talking(table)
+
+    for _ in range(len(state.discussion_order) - 1):
+        assert Buttons.ANOTHER_ROUND not in table.card.texts
+        await table.press(Buttons.NEXT_SPEAKER)
+
+    assert table.card.texts == (Buttons.ANOTHER_ROUND, Buttons.SHOW_SPIES)
+
+
+async def test_another_round_starts_the_circle_over_in_the_same_order(table: Table) -> None:
+    state = await all_spoken(table)
+
+    await table.press(Buttons.ANOTHER_ROUND)
+
+    repeated = table.games.stored
+    assert repeated.discussion_order == state.discussion_order
+    assert repeated.discussion_cursor == 0
+    assert repeated.discussion_round == 2
+    assert repeated.status is GameStatus.DISCUSSION
+
+
+async def test_the_first_round_caption_stays_free_of_numbering(table: Table) -> None:
+    state = await talking(table)
+
+    assert state.discussion_round == 1
+    assert table.card.caption == Discussion.TALK_CAPTION.format(
+        position=1, total=len(NAMES), name=NAMES[state.discussion_order[0]]
+    )
+
+
+async def test_a_later_round_is_numbered_in_the_caption(table: Table) -> None:
+    state = await all_spoken(table)
+
+    await table.press(Buttons.ANOTHER_ROUND)
+
+    assert table.card.caption == Discussion.ROUND_PREFIX.format(
+        round=2
+    ) + Discussion.TALK_CAPTION.format(
+        position=1, total=len(NAMES), name=NAMES[state.discussion_order[0]]
+    )
+
+
+async def test_a_later_round_numbers_its_last_speaker_too(table: Table) -> None:
+    state = await all_spoken(table)
+
+    await table.press(Buttons.ANOTHER_ROUND)
+    for _ in range(len(NAMES) - 1):
+        await table.press(Buttons.NEXT_SPEAKER)
+
+    assert table.card.caption == Discussion.ROUND_PREFIX.format(
+        round=2
+    ) + Discussion.LAST_TALK_CAPTION.format(name=NAMES[state.discussion_order[-1]])
+
+
+async def test_another_round_does_not_cut_the_current_one_short(table: Table) -> None:
+    await talking(table)
+
+    await table.tap(TalkCB(action=TalkAction.ROUND, session_id=SESSION_ID, cursor=0).pack())
+
+    assert table.alerts[-1] == Errors.STALE_TURN
+    assert table.games.stored.discussion_round == 1
+    assert table.games.stored.discussion_cursor == 0
+
+
+async def test_a_broken_order_does_not_open_another_round(table: Table) -> None:
+    await table.games.save(
+        make_state(names=("Аня", "Борис"), discussion_order=[99, 0], discussion_cursor=1)
+    )
+
+    await table.tap(TalkCB(action=TalkAction.ROUND, session_id=SESSION_ID, cursor=1).pack())
+
+    assert table.alerts == [Errors.BROKEN_SESSION]
+    assert not table.cards
+    assert table.games.stored.discussion_round == 1
+
+
+async def test_a_stale_another_round_button_does_not_restart_the_circle(table: Table) -> None:
+    await all_spoken(table)
+    stale = table.card.callback_data(Buttons.ANOTHER_ROUND)
+    await table.press(Buttons.ANOTHER_ROUND)
+    shown = len(table.cards)
+
+    await table.tap(stale)
+
+    assert table.alerts[-1] == Errors.STALE_TURN
+    assert table.games.stored.discussion_round == 2
+    assert len(table.cards) == shown
+
+
+async def test_an_outsider_does_not_start_another_round(table: Table) -> None:
+    await all_spoken(table)
+
+    await table.press(Buttons.ANOTHER_ROUND, user_id=OUTSIDER_ID)
+
+    assert table.alerts[-1] == Errors.NOT_HOST
+    assert table.games.stored.discussion_round == 1
+
+
+async def test_the_hunt_still_ends_the_game_after_another_round(table: Table) -> None:
+    await all_spoken(table)
+    await table.press(Buttons.ANOTHER_ROUND)
+
+    await table.press(Buttons.SHOW_SPIES)
+
+    assert table.games.stored.status is GameStatus.FINISHED
+
+
+async def test_the_next_game_counts_rounds_from_the_first(table: Table) -> None:
+    await all_spoken(table)
+    await table.press(Buttons.ANOTHER_ROUND)
+    await table.press(Buttons.SHOW_SPIES)
+
+    await table.press(Buttons.PLAY_AGAIN)
+
+    assert table.games.stored.discussion_round == 1
 
 
 async def test_the_final_screen_names_every_spy_and_the_word(table: Table) -> None:
