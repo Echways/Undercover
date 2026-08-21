@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Plan
+spy_bot_plan.md
+
+# Локальный предпросмотр карточек (scripts/preview_cards.py)
+preview/

@@ -1,0 +1,156 @@
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import cast
+
+import pytest
+from aiogram import Dispatcher
+from conftest import SetEnv
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+
+from undercover.config import Settings, load_settings
+from undercover.di import AppDependencies, DependencyUnavailableError, build_dependencies
+from undercover.redis.game_state import GameStateRepository
+
+
+class _StubConnection:
+    async def execute(self, statement: object) -> None:
+        return None
+
+
+class _StubEngine:
+    def __init__(self, failure: Exception | None = None) -> None:
+        self._failure = failure
+        self.disposed = False
+
+    @asynccontextmanager
+    async def connect(self) -> AsyncIterator[_StubConnection]:
+        if self._failure is not None:
+            raise self._failure
+        yield _StubConnection()
+
+    async def dispose(self) -> None:
+        self.disposed = True
+
+
+class _StubRedis:
+    def __init__(self, failure: Exception | None = None) -> None:
+        self._failure = failure
+        self.closed = False
+
+    async def ping(self) -> bool:
+        if self._failure is not None:
+            raise self._failure
+        return True
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+def _dependencies(
+    settings: Settings,
+    engine: _StubEngine | None = None,
+    redis: _StubRedis | None = None,
+) -> AppDependencies:
+    return AppDependencies(
+        settings=settings,
+        engine=cast(AsyncEngine, engine or _StubEngine()),
+        sessionmaker=cast("async_sessionmaker[AsyncSession]", object()),
+        redis=cast(Redis, redis or _StubRedis()),
+        games=cast(GameStateRepository, object()),
+    )
+
+
+@pytest.fixture
+def settings(set_env: SetEnv) -> Settings:
+    set_env()
+    return load_settings()
+
+
+def test_build_dependencies_reuses_one_engine(settings: Settings) -> None:
+    dependencies = build_dependencies(settings)
+
+    assert dependencies.settings is settings
+    assert dependencies.sessionmaker.kw["bind"] is dependencies.engine
+    assert dependencies.games._redis is dependencies.redis
+
+
+def test_workflow_data_reaches_dispatcher(settings: Settings) -> None:
+    dependencies = _dependencies(settings)
+
+    dispatcher = Dispatcher(**dependencies.as_workflow_data())
+
+    assert dispatcher["settings"] is settings
+    assert dispatcher["redis"] is dependencies.redis
+    assert dispatcher["sessionmaker"] is dependencies.sessionmaker
+    assert dispatcher["games"] is dependencies.games
+
+
+def test_engine_is_not_exposed_to_handlers(settings: Settings) -> None:
+    assert set(_dependencies(settings).as_workflow_data()) == {
+        "settings",
+        "sessionmaker",
+        "redis",
+        "games",
+    }
+
+
+async def test_check_connections_logs_both_services(
+    settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.INFO, logger="undercover.di"):
+        await _dependencies(settings).check_connections()
+
+    assert [record.getMessage() for record in caplog.records] == [
+        "подключение к PostgreSQL (postgres:5432/undercover) установлено",
+        "подключение к Redis (redis:6379/0) установлено",
+    ]
+
+
+async def test_unreachable_postgres_is_reported_readably(settings: Settings) -> None:
+    dependencies = _dependencies(settings, engine=_StubEngine(OSError("Connection refused")))
+
+    with pytest.raises(DependencyUnavailableError) as error:
+        await dependencies.check_connections()
+
+    message = str(error.value)
+    assert message == (
+        "нет подключения к PostgreSQL (postgres:5432/undercover): OSError: Connection refused"
+    )
+    assert "s3cret" not in message
+
+
+async def test_unreachable_redis_is_reported_readably(settings: Settings) -> None:
+    dependencies = _dependencies(settings, redis=_StubRedis(OSError("Connection refused")))
+
+    with pytest.raises(DependencyUnavailableError) as error:
+        await dependencies.check_connections()
+
+    assert str(error.value) == (
+        "нет подключения к Redis (redis:6379/0): OSError: Connection refused"
+    )
+
+
+async def test_close_releases_both_resources(settings: Settings) -> None:
+    engine, redis = _StubEngine(), _StubRedis()
+
+    await _dependencies(settings, engine=engine, redis=redis).close()
+
+    assert engine.disposed
+    assert redis.closed
+
+
+async def test_close_disposes_engine_even_if_redis_fails(settings: Settings) -> None:
+    engine = _StubEngine()
+    redis = _StubRedis()
+    redis.aclose = _raise
+
+    with pytest.raises(OSError):
+        await _dependencies(settings, engine=engine, redis=redis).close()
+
+    assert engine.disposed
+
+
+async def _raise() -> None:
+    raise OSError("broken pipe")
