@@ -1,6 +1,7 @@
 *
 !LICENSE
 !README.md
+!poetry.lock
 !pyproject.toml
 !src
 **/__pycache__

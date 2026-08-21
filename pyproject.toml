@@ -4,7 +4,8 @@ version = "0.1.0"
 description = "Undercover — Telegram-бот для игры в шпиона с одного телефона"
 readme = "README.md"
 requires-python = ">=3.13,<3.15"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 
 dependencies = [
     "aiogram[redis]==3.30.0",
@@ -23,22 +24,21 @@ dependencies = [
 undercover-bot = "undercover.main:main"
 undercover-seed = "undercover.db.seed:main"
 
-[project.optional-dependencies]
-dev = [
-    "pytest==9.1.1",
-    "pytest-asyncio==1.4.0",
-    "pytest-cov==7.1.0",
-    "testcontainers[postgres,redis]==4.15.0",
-    "ruff==0.16.4",
-    "mypy==2.3.1",
-]
-
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/undercover"]
+[tool.poetry]
+requires-poetry = ">=2.1"
+packages = [{ include = "undercover", from = "src" }]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "9.1.1"
+pytest-asyncio = "1.4.0"
+pytest-cov = "7.1.0"
+testcontainers = { version = "4.15.0", extras = ["postgres", "redis"] }
+ruff = "0.16.4"
+mypy = "2.3.1"
 
 [tool.alembic]
 script_location = "undercover.db:migrations"

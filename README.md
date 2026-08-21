@@ -65,7 +65,9 @@ tests/              pytest: юнит-тесты и интеграционные 
 tools/              вспомогательные скрипты разработки, в образ не попадают
 deploy/             Dockerfile и его .dockerignore
 .github/            CI: workflow, составное действие, скрипты отчётов
-compose.yaml        бот, PostgreSQL и Redis для локального запуска
+pyproject.toml      Poetry: зависимости и настройки инструментов
+poetry.lock         зафиксированные версии: те же в CI и в образе
+docker-compose.yaml бот, PostgreSQL и Redis для локального запуска
 ```
 
 Отдельного `alembic.ini` нет: конфигурация Alembic живёт в `[tool.alembic]`
@@ -87,43 +89,57 @@ alembic check                              # модели разошлись с 
 undercover-seed                            # налить словарь (идемпотентно)
 ```
 
+Локально эти команды идут через `poetry run`, в контейнере — как есть
+(`docker compose run --rm bot alembic upgrade head`).
+
 Сидер можно запускать сколько угодно раз: он добавляет только недостающие слова
 и подсказки и не трогает то, что оператор выключил вручную.
 
 ## Разработка без Docker
 
+Нужен [Poetry](https://python-poetry.org/docs/#installation) 2.1+ и Python 3.13
+или 3.14.
+
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+poetry install                # окружение и все зависимости из poetry.lock
 
 # PostgreSQL и Redis всё равно нужны — можно поднять только их:
 docker compose up -d postgres redis
 # и указать в .env: POSTGRES_HOST=localhost, REDIS_URL=redis://localhost:6379/0
 
-alembic upgrade head
-undercover-seed
-undercover-bot
+poetry run alembic upgrade head
+poetry run undercover-seed
+poetry run undercover-bot
 ```
+
+Виртуальное окружение Poetry заводит сам и держит у себя
+(`poetry env info --path`) — руками его создавать не нужно и активировать
+тоже: хватает `poetry run`, а если хочется без префикса,
+`eval $(poetry env activate)`. Версии зависимостей закреплены в `poetry.lock`:
+`poetry add`/`poetry update` меняют его, а `poetry check --lock` ловит
+рассинхрон с `pyproject.toml` — эту же проверку гоняет CI.
 
 Логи выбирают формат по выводу: в терминале — читаемые колонки, в контейнере —
 JSON для сборщика логов.
 
-Карточки можно посмотреть, не поднимая бота: `python tools/card_preview.py`
-раскладывает примеры всех экранов в `docs/preview`, а `python
-tools/card_templates.py` пересобирает фоны, которые лежат в пакете.
+Карточки можно посмотреть, не поднимая бота: `poetry run python
+tools/card_preview.py` раскладывает примеры всех экранов в `docs/preview`, а
+`poetry run python tools/card_templates.py` пересобирает фоны, которые лежат
+в пакете.
 
 ## Проверки
 
 Ровно те же команды гоняет CI:
 
 ```bash
-ruff check .           # линт
-ruff format --check .  # форматирование
-mypy                   # типы, strict
+poetry check --lock               # lock не разошёлся с pyproject
+poetry run ruff check .           # линт
+poetry run ruff format --check .  # форматирование
+poetry run mypy                   # типы, strict
 
-pytest                      # все тесты
-pytest -m "not integration" # без Docker
-pytest --cov                # с покрытием
+poetry run pytest                      # все тесты
+poetry run pytest -m "not integration" # без Docker
+poetry run pytest --cov                # с покрытием
 ```
 
 Интеграционные тесты поднимают одноразовые PostgreSQL и Redis через
