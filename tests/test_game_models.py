@@ -4,14 +4,34 @@ import pytest
 from pydantic import ValidationError
 
 from undercover.game.models import (
+    Ballot,
+    Direction,
     GameMode,
     GameSessionState,
+    GameStatus,
     LobbyPlayer,
     LobbyState,
     PlayerState,
     Role,
+    Winner,
     WordWithHints,
 )
+
+
+def make_session(**overrides: Any) -> GameSessionState:
+    defaults: dict[str, Any] = {
+        "session_id": "11111111-1111-1111-1111-111111111111",
+        "chat_id": -100,
+        "host_user_id": 777,
+        "status": GameStatus.DISCUSSION,
+        "players": [
+            PlayerState(order_index=0, name="Аня", is_spy=True),
+            PlayerState(order_index=1, name="Борис", is_spy=False),
+        ],
+        "word_id": 1,
+        "word_text": "пицца",
+    }
+    return GameSessionState.model_validate(defaults | overrides)
 
 
 def test_player_starts_with_no_viewed_card() -> None:
@@ -61,3 +81,76 @@ def test_old_sessions_without_the_new_fields_still_read_as_hot_seat() -> None:
 
     assert state.mode is GameMode.HOT_SEAT
     assert state.players[0].user_id is None
+
+
+def test_a_player_starts_the_game_alive() -> None:
+    player = PlayerState(order_index=0, name="Аня", is_spy=False)
+
+    assert not player.is_out
+
+
+def test_a_fresh_ballot_holds_no_votes() -> None:
+    ballot = Ballot(options=[Direction.ROUND, Direction.VOTE])
+
+    assert ballot.votes == {}
+    assert not ballot.revote
+
+
+def test_a_ballot_without_options_is_refused() -> None:
+    with pytest.raises(ValidationError):
+        Ballot(options=[])
+
+
+def test_a_ballot_keeps_a_vote_per_voter() -> None:
+    ballot = Ballot(options=["0", "1"], votes={111: "0", 222: "1"})
+
+    assert ballot.votes == {111: "0", 222: "1"}
+
+
+def test_directions_are_plain_strings_so_they_fit_a_ballot() -> None:
+    ballot = Ballot(options=[Direction.ROUND, Direction.VOTE])
+
+    assert ballot.options == ["round", "vote"]
+
+
+def test_a_game_starts_without_a_ballot_and_without_a_winner() -> None:
+    state = make_session()
+
+    assert state.ballot is None
+    assert state.winner is None
+
+
+def test_a_finished_game_remembers_who_won() -> None:
+    state = make_session(status=GameStatus.FINISHED, winner=Winner.SPIES)
+
+    assert state.winner is Winner.SPIES
+
+
+def test_a_saved_game_survives_a_round_trip_through_json() -> None:
+    state = make_session(
+        status=GameStatus.VOTING,
+        ballot=Ballot(options=["0", "1"], votes={111: "0"}, revote=True),
+    )
+
+    restored = GameSessionState.model_validate_json(state.model_dump_json())
+
+    assert restored.ballot == state.ballot
+    assert restored.status is GameStatus.VOTING
+
+
+def test_games_saved_before_voting_existed_still_read() -> None:
+    older = {
+        "session_id": "11111111-1111-1111-1111-111111111111",
+        "chat_id": -100,
+        "host_user_id": 777,
+        "status": "discussion",
+        "players": [{"order_index": 0, "name": "Аня", "is_spy": True}],
+        "word_id": 1,
+        "word_text": "пицца",
+    }
+
+    state = GameSessionState.model_validate(older)
+
+    assert state.ballot is None
+    assert state.winner is None
+    assert not state.players[0].is_out

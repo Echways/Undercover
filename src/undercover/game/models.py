@@ -21,6 +21,7 @@ class PlayerState(BaseModel):
     name: str
     is_spy: bool
     has_viewed: bool = False
+    is_out: bool = False
     card_file_id: str | None = None
     user_id: int | None = None
 
@@ -37,10 +38,27 @@ class WordWithHints(BaseModel):
     hints: tuple[str, ...]
 
 
+class Winner(StrEnum):
+    CIVILIANS = "civilians"
+    SPIES = "spies"
+
+
+class Direction(StrEnum):
+    ROUND = "round"
+    VOTE = "vote"
+
+
+class Ballot(BaseModel):
+    options: list[str] = Field(min_length=1)
+    votes: dict[int, str] = Field(default_factory=dict)
+    revote: bool = False
+
+
 class GameStatus(StrEnum):
     SETUP = "setup"
     REVEAL = "reveal"
     DISCUSSION = "discussion"
+    VOTING = "voting"
     FINISHED = "finished"
 
 
@@ -73,6 +91,10 @@ class GameSessionState(BaseModel):
     turn_seconds: int = Field(default=0, ge=0)
 
     turn_deadline: datetime | None = None
+
+    ballot: Ballot | None = None
+
+    winner: Winner | None = None
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
