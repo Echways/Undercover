@@ -154,3 +154,14 @@ def test_games_saved_before_voting_existed_still_read() -> None:
     assert state.ballot is None
     assert state.winner is None
     assert not state.players[0].is_out
+
+
+def test_a_fresh_player_is_not_in_the_elimination_queue() -> None:
+    player = PlayerState(order_index=0, name="Аня", is_spy=False)
+
+    assert player.out_order is None
+
+
+def test_the_elimination_place_starts_from_one() -> None:
+    with pytest.raises(ValidationError):
+        PlayerState(order_index=0, name="Аня", is_spy=False, out_order=0)

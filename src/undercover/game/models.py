@@ -22,6 +22,7 @@ class PlayerState(BaseModel):
     is_spy: bool
     has_viewed: bool = False
     is_out: bool = False
+    out_order: int | None = Field(default=None, gt=0)
     card_file_id: str | None = None
     user_id: int | None = None
 

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from undercover.db.models import Category, GameSessionLog, SpyHint, Word
+from undercover.db.models import Category, GamePlayerResult, GameSessionLog, SpyHint, Word
 from undercover.db.repositories.game_log import GameLogRepository, game_log_writer
 from undercover.game.models import GameSessionState, GameStatus, PlayerState, Winner
 
@@ -23,6 +23,7 @@ FINISHED_AT = STARTED_AT + timedelta(minutes=17)
 
 NAMES = ("Аня", "Борис", "Вера", "Галя")
 SPY_INDEXES = (1, 3)
+GROUP_IDS = (11, 22, 33, 44)
 
 
 async def add_word(session: AsyncSession, text: str = "пицца") -> Word:
@@ -47,6 +48,22 @@ def make_state(word_id: int, **overrides: object) -> GameSessionState:
         "created_at": STARTED_AT,
     }
     return GameSessionState.model_validate(defaults | overrides)
+
+
+def group_state(word_id: int, **overrides: object) -> GameSessionState:
+    state = make_state(word_id, **overrides)
+    for player, user_id in zip(state.players, GROUP_IDS, strict=True):
+        player.user_id = user_id
+    return state
+
+
+async def stored_players(session: AsyncSession) -> list[GamePlayerResult]:
+    result = await session.execute(
+        select(GamePlayerResult)
+        .where(GamePlayerResult.chat_id == CHAT_ID)
+        .order_by(GamePlayerResult.user_id)
+    )
+    return list(result.scalars())
 
 
 async def stored_rows(session: AsyncSession) -> list[GameSessionLog]:
@@ -111,6 +128,68 @@ async def test_a_game_ended_early_records_no_winner(db_session: AsyncSession) ->
 async def test_a_word_missing_from_the_catalog_is_reported(db_session: AsyncSession) -> None:
     with pytest.raises(IntegrityError):
         await GameLogRepository(db_session).record_finished(make_state(word_id=10**9))
+
+
+async def test_a_won_game_records_every_player(db_session: AsyncSession) -> None:
+    word = await add_word(db_session)
+
+    await GameLogRepository(db_session).record_finished(
+        group_state(word.id, winner=Winner.SPIES), FINISHED_AT
+    )
+
+    rows = await stored_players(db_session)
+    assert [row.user_id for row in rows] == list(GROUP_IDS)
+    assert all(row.finished_at == FINISHED_AT for row in rows)
+
+
+async def test_the_winning_side_is_marked_on_every_row(db_session: AsyncSession) -> None:
+    word = await add_word(db_session)
+
+    await GameLogRepository(db_session).record_finished(group_state(word.id, winner=Winner.SPIES))
+
+    rows = await stored_players(db_session)
+    assert [row.is_winner for row in rows] == [row.is_spy for row in rows]
+
+
+async def test_a_civilian_win_marks_civilians_not_spies(db_session: AsyncSession) -> None:
+    word = await add_word(db_session)
+
+    await GameLogRepository(db_session).record_finished(
+        group_state(word.id, winner=Winner.CIVILIANS)
+    )
+
+    rows = await stored_players(db_session)
+    assert [row.is_winner for row in rows] == [True, False, True, False]
+
+
+async def test_a_game_ended_early_records_no_player_at_all(db_session: AsyncSession) -> None:
+    word = await add_word(db_session)
+
+    await GameLogRepository(db_session).record_finished(group_state(word.id))
+
+    assert await stored_players(db_session) == []
+    assert len(await stored_rows(db_session)) == 1
+
+
+async def test_a_game_from_one_phone_leaves_no_personal_trace(db_session: AsyncSession) -> None:
+    word = await add_word(db_session)
+
+    await GameLogRepository(db_session).record_finished(
+        make_state(word.id, winner=Winner.CIVILIANS)
+    )
+
+    assert await stored_players(db_session) == []
+
+
+async def test_the_order_of_elimination_survives_the_game(db_session: AsyncSession) -> None:
+    word = await add_word(db_session)
+    state = group_state(word.id, winner=Winner.CIVILIANS)
+    state.players[1].out_order = 1
+
+    await GameLogRepository(db_session).record_finished(state)
+
+    rows = await stored_players(db_session)
+    assert [row.out_order for row in rows] == [None, 1, None, None]
 
 
 @pytest.fixture

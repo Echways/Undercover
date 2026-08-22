@@ -219,6 +219,7 @@ __marimo__/
 
 # Plan
 docs/*
+.superpowers/
 
 # Отчёты, которые собирают те же команды, что и CI
 artifacts/

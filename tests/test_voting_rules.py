@@ -334,3 +334,20 @@ def test_two_spies_against_two_civilians_is_already_a_spy_win() -> None:
 
 def test_the_civilians_win_takes_priority_over_the_count() -> None:
     assert outcome(make_state(spies=(0,), out=(0, 1, 2))) is Winner.CIVILIANS
+
+
+def test_the_order_of_elimination_is_remembered() -> None:
+    state = make_state(players=5)
+
+    first = eliminate(state, 3)
+    second = eliminate(state, 0)
+
+    assert (first.out_order, second.out_order) == (1, 2)
+
+
+def test_a_player_who_survives_has_no_place_in_the_queue() -> None:
+    state = make_state(players=5)
+
+    eliminate(state, 3)
+
+    assert [player.out_order for player in alive(state)] == [None, None, None, None]

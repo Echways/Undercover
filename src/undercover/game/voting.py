@@ -109,6 +109,7 @@ def eliminate(state: GameSessionState, order_index: int) -> PlayerState:
         raise GameRulesError(f"игрока {order_index} нет среди живых")
 
     player.is_out = True
+    player.out_order = sum(candidate.is_out for candidate in state.players)
     close_ballot(state)
     return player
 

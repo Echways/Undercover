@@ -96,3 +96,28 @@ class GameSessionLog(Base):
     winner: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    players: Mapped[list["GamePlayerResult"]] = relationship(
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class GamePlayerResult(Base):
+    __tablename__ = "game_player_results"
+    __table_args__ = (
+        UniqueConstraint("game_id", "user_id"),
+        CheckConstraint("out_order > 0", name="out_order_positive"),
+        Index("ix_game_player_results_chat_id_user_id", "chat_id", "user_id"),
+        Index("ix_game_player_results_chat_id_finished_at", "chat_id", "finished_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("game_sessions_log.id", ondelete="CASCADE"))
+    chat_id: Mapped[int] = mapped_column(BigInteger)
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    name: Mapped[str] = mapped_column(Text)
+    is_spy: Mapped[bool]
+    is_winner: Mapped[bool]
+    out_order: Mapped[int | None] = mapped_column(SmallInteger)
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
