@@ -25,6 +25,7 @@ EXPECTED_ROUTERS: Final = (
     "Setup",
     "reveal",
     "discussion",
+    "voting",
     "finale",
     "errors",
 )
@@ -163,3 +164,11 @@ def test_the_turn_clock_stops_with_the_bot(dispatcher: Dispatcher) -> None:
     ]
 
     assert any(isinstance(owner, TurnClock) for owner in owners)
+
+
+def test_the_vote_is_registered_between_the_discussion_and_the_final_screen(
+    dispatcher: Dispatcher,
+) -> None:
+    names = [router.name for router in dispatcher.sub_routers]
+
+    assert names.index("discussion") < names.index("voting") < names.index("finale")

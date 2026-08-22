@@ -4,9 +4,10 @@ import pytest
 
 from fake_bot import CHAT_ID, HOST_ID
 from undercover.bot.guards import may_act
-from undercover.game.models import GameMode, GameSessionState, GameStatus, PlayerState
+from undercover.game.models import Ballot, GameMode, GameSessionState, GameStatus, PlayerState
 
 SESSION_ID: Final = "11111111-1111-1111-1111-111111111111"
+OPEN_BALLOT: Final = Ballot(options=["0", "1"])
 SPEAKER_ID: Final = 111
 BYSTANDER_ID: Final = 222
 
@@ -74,3 +75,43 @@ def test_a_hot_seat_player_without_a_telegram_id_is_never_mistaken_for_a_speaker
         player.user_id = None
 
     assert not may_act(state, SPEAKER_ID)
+
+
+def test_an_open_ballot_hands_a_button_to_every_player() -> None:
+    state = make_state(status=GameStatus.VOTING, ballot=OPEN_BALLOT)
+
+    assert may_act(state, SPEAKER_ID)
+    assert may_act(state, BYSTANDER_ID)
+
+
+def test_an_eliminated_player_still_reaches_the_ballot_to_be_told_they_are_out() -> None:
+    state = make_state(status=GameStatus.VOTING, ballot=OPEN_BALLOT)
+    state.players[1].is_out = True
+
+    assert may_act(state, BYSTANDER_ID)
+
+
+def test_someone_who_never_played_gets_nothing() -> None:
+    state = make_state(status=GameStatus.VOTING, ballot=OPEN_BALLOT)
+
+    assert not may_act(state, 999)
+
+
+def test_a_closed_ballot_gives_the_voting_screen_back_to_the_host() -> None:
+    state = make_state(status=GameStatus.VOTING)
+
+    assert not may_act(state, BYSTANDER_ID)
+    assert may_act(state, HOST_ID)
+
+
+def test_hot_seat_voting_stays_with_the_host() -> None:
+    state = make_state(GameMode.HOT_SEAT, status=GameStatus.VOTING, ballot=OPEN_BALLOT)
+
+    assert not may_act(state, SPEAKER_ID)
+    assert may_act(state, HOST_ID)
+
+
+def test_the_direction_ballot_lets_a_player_answer_from_someone_elses_turn() -> None:
+    state = make_state(ballot=OPEN_BALLOT, discussion_cursor=0)
+
+    assert may_act(state, BYSTANDER_ID)

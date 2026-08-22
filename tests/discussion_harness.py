@@ -7,7 +7,12 @@ from typing import Any, Final
 
 import pytest
 from aiogram import Bot, Dispatcher, F, Router
-from aiogram.methods import AnswerCallbackQuery, EditMessageMedia, SendPhoto
+from aiogram.methods import (
+    AnswerCallbackQuery,
+    EditMessageCaption,
+    EditMessageMedia,
+    SendPhoto,
+)
 from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, Message
 from aiogram_dialog import DialogManager, StartMode, setup_dialogs
 from aiogram_dialog.test_tools import BotClient, MockMessageManager
@@ -21,8 +26,9 @@ from undercover.bot.routers.discussion import create_discussion_router, start_di
 from undercover.bot.routers.finale import create_finale_router
 from undercover.bot.routers.reveal import create_reveal_router, start_reveal
 from undercover.bot.routers.setup_dialog import Setup, create_setup_dialog
+from undercover.bot.routers.voting import create_voting_router, start_voting
 from undercover.bot.turn_clock import TurnClock, TurnKeeper
-from undercover.game.models import GameSessionState, GameStatus, PlayerState
+from undercover.game.models import GameMode, GameSessionState, GameStatus, PlayerState
 from undercover.texts import Buttons
 from undercover.utils.keyed_locks import KeyedLocks
 
@@ -190,11 +196,13 @@ async def table(words: FakeWords, log: RecordingLog) -> AsyncIterator[Table]:
     games = FakeGameStateRepository()
     keeper = TurnKeeper(clock=TurnClock(tick=IDLE_TICK), locks=KeyedLocks())
     begin_discussion = partial(start_discussion, keeper=keeper)
+    begin_voting = partial(start_voting, keeper=keeper)
     dispatcher = Dispatcher(storage=JsonMemoryStorage(), games=games)
     dispatcher.include_router(start_router())
     dispatcher.include_router(create_setup_dialog(words.open, start_reveal))
     dispatcher.include_router(create_reveal_router(begin_discussion))
-    dispatcher.include_router(create_discussion_router(keeper))
+    dispatcher.include_router(create_discussion_router(keeper, begin_voting))
+    dispatcher.include_router(create_voting_router(keeper, begin_discussion, log))
     dispatcher.include_router(create_finale_router(words.open, log, keeper, begin_discussion))
     messages = MockMessageManager()
     setup_dialogs(dispatcher, message_manager=messages)
@@ -236,3 +244,28 @@ async def all_spoken(table: Table, **overrides: Any) -> GameSessionState:
 
 def spoken_names(table: Table) -> list[str]:
     return [name for card in table.cards for name in NAMES if name in card.caption]
+
+
+async def voting(table: Table, **overrides: Any) -> GameSessionState:
+    state = make_state(**overrides)
+    await table.games.save(state)
+    await start_voting(table.bot, table.games, state, table.keeper)
+    return table.games.stored
+
+
+async def group_voting(table: Table, ids: tuple[int, ...], **overrides: Any) -> GameSessionState:
+    return await voting(table, ids=ids, mode=GameMode.GROUP, **overrides)
+
+
+def repainted(table: Table) -> EditMessageCaption:
+    edits = table.session.calls(EditMessageCaption)
+    assert edits, "экран ни разу не перерисовывался"
+    last = edits[-1]
+    assert isinstance(last, EditMessageCaption)
+    return last
+
+
+def repainted_texts(table: Table) -> set[str]:
+    markup = repainted(table).reply_markup
+    assert isinstance(markup, InlineKeyboardMarkup)
+    return {button.text for row in markup.inline_keyboard for button in row}

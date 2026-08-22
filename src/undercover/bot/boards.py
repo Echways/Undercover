@@ -11,8 +11,8 @@ from undercover.game.models import GameMode, GameSessionState
 logger = logging.getLogger(__name__)
 
 
-class DiscussionBoard(Protocol):
-    async def open_turn(
+class PhaseBoard(Protocol):
+    async def show(
         self,
         bot: Bot,
         state: GameSessionState,
@@ -21,7 +21,7 @@ class DiscussionBoard(Protocol):
         keyboard: InlineKeyboardMarkup,
     ) -> int: ...
 
-    async def close_turn(
+    async def revise(
         self,
         bot: Bot,
         state: GameSessionState,
@@ -31,7 +31,7 @@ class DiscussionBoard(Protocol):
 
 
 class SingleCardBoard:
-    async def open_turn(
+    async def show(
         self,
         bot: Bot,
         state: GameSessionState,
@@ -44,7 +44,7 @@ class SingleCardBoard:
         )
         return message.message_id
 
-    async def close_turn(
+    async def revise(
         self,
         bot: Bot,
         state: GameSessionState,
@@ -55,7 +55,7 @@ class SingleCardBoard:
 
 
 class FeedBoard:
-    async def open_turn(
+    async def show(
         self,
         bot: Bot,
         state: GameSessionState,
@@ -66,7 +66,7 @@ class FeedBoard:
         message = await bot.send_photo(state.chat_id, photo, caption=caption, reply_markup=keyboard)
         return message.message_id
 
-    async def close_turn(
+    async def revise(
         self,
         bot: Bot,
         state: GameSessionState,
@@ -86,5 +86,5 @@ class FeedBoard:
             logger.info("ход %s не заморозился (%s)", state.current_message_id, error)
 
 
-def board_for(state: GameSessionState) -> DiscussionBoard:
+def board_for(state: GameSessionState) -> PhaseBoard:
     return FeedBoard() if state.mode is GameMode.GROUP else SingleCardBoard()

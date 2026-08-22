@@ -5,6 +5,7 @@ from io import BytesIO
 import pytest
 from PIL import Image, ImageChops
 
+from undercover.game.models import Winner
 from undercover.media.card_renderer import (
     BACKGROUND_NEUTRAL,
     BACKGROUND_UNDERCOVER,
@@ -20,11 +21,13 @@ from undercover.media.card_renderer import (
     _font,
     _text_width,
     _wrap,
+    render_ballot_card,
     render_civilian_card,
     render_hidden_card,
     render_result_card,
     render_speaker_card,
     render_spy_card,
+    render_verdict_card,
 )
 
 RENDERERS: tuple[Callable[..., bytes], ...] = (
@@ -33,6 +36,8 @@ RENDERERS: tuple[Callable[..., bytes], ...] = (
     render_spy_card,
     render_speaker_card,
     render_result_card,
+    render_ballot_card,
+    render_verdict_card,
 )
 
 
@@ -68,6 +73,18 @@ def test_speaker_card_is_a_photo_of_card_size() -> None:
 
 def test_result_card_is_a_photo_of_card_size() -> None:
     with open_card(render_result_card(("Аня",), "пицца")) as card:
+        assert card.format == CARD_FORMAT
+        assert card.size == CARD_SIZE
+
+
+def test_ballot_card_is_a_photo_of_card_size() -> None:
+    with open_card(render_ballot_card()) as card:
+        assert card.format == CARD_FORMAT
+        assert card.size == CARD_SIZE
+
+
+def test_verdict_card_is_a_photo_of_card_size() -> None:
+    with open_card(render_verdict_card("Аня", is_spy=True)) as card:
         assert card.format == CARD_FORMAT
         assert card.size == CARD_SIZE
 
@@ -188,6 +205,14 @@ LAYOUT_CASES: tuple[tuple[Callable[..., bytes], tuple[object, ...], str], ...] =
         (tuple(f"{LONG_NAME}{index}" for index in range(5)), LONG_TEXT),
         BACKGROUND_UNDERCOVER,
     ),
+    (render_ballot_card, (), BACKGROUND_NEUTRAL),
+    (render_verdict_card, ("Аня", True), BACKGROUND_UNDERCOVER),
+    (render_verdict_card, (LONG_NAME, False), BACKGROUND_NEUTRAL),
+    (
+        render_result_card,
+        (tuple(f"{LONG_NAME}{index}" for index in range(5)), LONG_TEXT, Winner.SPIES),
+        BACKGROUND_UNDERCOVER,
+    ),
 )
 
 
@@ -246,6 +271,8 @@ WORDMARK_CASES: tuple[tuple[Callable[..., bytes], tuple[object, ...], str], ...]
     (render_speaker_card, ("Аня",), BACKGROUND_NEUTRAL),
     (render_spy_card, ("Аня", "её режут на куски"), BACKGROUND_UNDERCOVER),
     (render_result_card, (("Аня",), "пицца"), BACKGROUND_UNDERCOVER),
+    (render_ballot_card, (), BACKGROUND_NEUTRAL),
+    (render_verdict_card, ("Аня", False), BACKGROUND_NEUTRAL),
 )
 
 
@@ -263,3 +290,31 @@ def test_every_card_is_signed_at_the_bottom(
         )
 
     assert band.convert("L").point(lambda level: level > CODEC_TOLERANCE).getbbox() is not None
+
+
+def test_the_ballot_card_is_drawn_on_the_neutral_background() -> None:
+    assert_same_corner(render_ballot_card(), BACKGROUND_NEUTRAL)
+
+
+def test_the_verdict_takes_its_colour_from_the_role() -> None:
+    assert_same_corner(render_verdict_card("Аня", is_spy=True), BACKGROUND_UNDERCOVER)
+    assert_same_corner(render_verdict_card("Аня", is_spy=False), BACKGROUND_NEUTRAL)
+
+
+def test_the_same_name_looks_different_for_a_spy_and_for_a_civilian() -> None:
+    assert render_verdict_card("Аня", is_spy=True) != render_verdict_card("Аня", is_spy=False)
+
+
+def test_a_nameless_verdict_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        render_verdict_card("   ", is_spy=False)
+
+
+def test_the_result_card_says_who_won_when_there_is_a_winner() -> None:
+    quiet = render_result_card(("Аня",), "пицца")
+    civilians = render_result_card(("Аня",), "пицца", winner=Winner.CIVILIANS)
+    spies = render_result_card(("Аня",), "пицца", winner=Winner.SPIES)
+
+    assert quiet != civilians
+    assert civilians != spies
+    assert quiet != spies

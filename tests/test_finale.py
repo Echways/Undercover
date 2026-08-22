@@ -15,8 +15,8 @@ from discussion_harness import (
 from fake_bot import CHAT_ID
 from fake_words import WORD, pizza
 from undercover.bot.routers.finale import FinalAction, FinalCB
-from undercover.game.models import GameMode, GameStatus
-from undercover.texts import Buttons, Discussion, Errors, Lobby
+from undercover.game.models import GameMode, GameStatus, Winner
+from undercover.texts import Buttons, Discussion, Errors, Lobby, Vote
 from undercover.texts import Setup as SetupTexts
 
 __all__ = ["log", "table", "words"]
@@ -262,3 +262,54 @@ async def test_an_undelivered_role_keeps_the_finished_group_game(table: Table) -
 
     assert table.games.stored.session_id == old.session_id
     assert table.alerts[-1] == Lobby.DELIVERY_FAILED
+
+
+async def test_only_the_host_uncovers_the_spies(table: Table) -> None:
+    await talking(table, ids=(11, 22, 33, 44), mode=GameMode.GROUP)
+
+    await table.tap(table.card.callback_data(Buttons.SHOW_SPIES), user_id=11)
+
+    assert Errors.NOT_HOST in table.alerts
+    assert table.games.stored.status is GameStatus.DISCUSSION
+
+
+async def test_an_early_exit_ends_the_game_without_a_winner(table: Table) -> None:
+    await finished(table)
+
+    stored = table.games.stored
+    assert stored.status is GameStatus.FINISHED
+    assert stored.winner is None
+    assert Vote.CIVILIANS_WIN not in table.card.caption
+    assert Vote.SPIES_WIN not in table.card.caption
+
+
+async def test_the_result_screen_says_who_won(table: Table) -> None:
+    state = await talking(table)
+    state.status = GameStatus.FINISHED
+    state.winner = Winner.SPIES
+    await table.games.save(state)
+
+    await table.tap(FinalCB(action=FinalAction.RESULT, session_id=SESSION_ID).pack())
+
+    assert Vote.SPIES_WIN in table.card.caption
+    assert WORD in table.card.caption
+
+
+async def test_the_result_screen_still_offers_the_next_game(table: Table) -> None:
+    state = await talking(table)
+    state.status = GameStatus.FINISHED
+    state.winner = Winner.CIVILIANS
+    await table.games.save(state)
+
+    await table.tap(FinalCB(action=FinalAction.RESULT, session_id=SESSION_ID).pack())
+
+    assert Buttons.PLAY_AGAIN in table.card.texts
+    assert Buttons.NEW_GAME in table.card.texts
+
+
+async def test_the_result_screen_is_dead_while_the_game_is_on(table: Table) -> None:
+    await talking(table)
+
+    await table.tap(FinalCB(action=FinalAction.RESULT, session_id=SESSION_ID).pack())
+
+    assert Discussion.GAME_IS_ON in table.alerts

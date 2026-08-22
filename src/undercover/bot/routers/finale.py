@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from enum import StrEnum
 
 from aiogram import Bot, F, Router
@@ -8,9 +8,10 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram_dialog import DialogManager, StartMode
 
-from undercover.bot.guards import load_discussion, load_finished
+from undercover.bot.boards import board_for
+from undercover.bot.guards import deny_non_host, load_discussion, load_finished
 from undercover.bot.keyboards import button
-from undercover.bot.message_utils import as_photo, show_or_advance_card
+from undercover.bot.message_utils import as_photo
 from undercover.bot.role_delivery import deliver_roles
 from undercover.bot.routers.discussion import TalkAction, TalkCB, report_broken
 from undercover.bot.routers.reveal import PhaseStarter, start_reveal
@@ -25,7 +26,7 @@ from undercover.game.engine import (
 from undercover.game.models import GameMode, GameSessionState, GameStatus
 from undercover.media.card_renderer import CARD_SUFFIX, render_result_card
 from undercover.redis.game_state import GameStateRepository
-from undercover.texts import Buttons, Discussion, Errors, Lobby, empty_catalog_text
+from undercover.texts import WIN_LINES, Buttons, Discussion, Errors, Lobby, empty_catalog_text
 from undercover.utils.secure_random import secure_rng
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ GameLogWriter = Callable[[GameSessionState], Awaitable[None]]
 class FinalAction(StrEnum):
     AGAIN = "again"
     NEW = "new"
+    RESULT = "result"
 
 
 class FinalCB(CallbackData, prefix="final"):
@@ -60,36 +62,31 @@ def create_finale_router(
     ) -> None:
         async with keeper.locks.held(callback_data.session_id):
             state = await load_discussion(callback, callback_data.session_id, games)
-            if state is None:
+            if state is None or await deny_non_host(callback, state):
                 return
             keeper.clock.stop(state.session_id)
 
-            spies = [player.name for player in state.players if player.is_spy]
-            if not spies:
+            if not any(player.is_spy for player in state.players):
                 await report_broken(callback, state, "в партии нет ни одного шпиона")
                 return
 
-            image = await asyncio.to_thread(render_result_card, spies, state.word_text)
-            message = await show_or_advance_card(
-                bot,
-                state.chat_id,
-                state.current_message_id,
-                as_photo(image, f"result.{CARD_SUFFIX}"),
-                Discussion.FINAL_CAPTION.format(
-                    title=(
-                        Discussion.SPY_TITLE_MANY if len(spies) > 1 else Discussion.SPY_TITLE_ONE
-                    ),
-                    spies=", ".join(spies),
-                    word=state.word_text,
-                ),
-                _final_keyboard(state),
-            )
-
-            state.status = GameStatus.FINISHED
-            state.current_message_id = message.message_id
-            await games.save(state)
-            await _write_log(log_game, state)
+            await show_final(bot, games, state)
+            await write_log(log_game, state)
             await callback.answer()
+
+    @router.callback_query(FinalCB.filter(F.action == FinalAction.RESULT))
+    async def cb_show_result(
+        callback: CallbackQuery,
+        callback_data: FinalCB,
+        games: GameStateRepository,
+        bot: Bot,
+    ) -> None:
+        state = await load_finished(callback, callback_data.session_id, games)
+        if state is None:
+            return
+
+        await show_final(bot, games, state)
+        await callback.answer()
 
     @router.callback_query(FinalCB.filter(F.action == FinalAction.AGAIN))
     async def cb_play_again(
@@ -158,11 +155,35 @@ def create_finale_router(
     return router
 
 
-async def _write_log(log_game: GameLogWriter, state: GameSessionState) -> None:
+async def show_final(bot: Bot, games: GameStateRepository, state: GameSessionState) -> None:
+    spies = [player.name for player in state.players if player.is_spy]
+    image = await asyncio.to_thread(render_result_card, spies, state.word_text, state.winner)
+
+    state.current_message_id = await board_for(state).show(
+        bot,
+        state,
+        as_photo(image, f"result.{CARD_SUFFIX}"),
+        _final_caption(state, spies),
+        _final_keyboard(state),
+    )
+    state.status = GameStatus.FINISHED
+    await games.save(state)
+
+
+async def write_log(log_game: GameLogWriter, state: GameSessionState) -> None:
     try:
         await log_game(state)
     except Exception:
         logger.exception("партия %s: не записалась в журнал", state.session_id)
+
+
+def _final_caption(state: GameSessionState, spies: Sequence[str]) -> str:
+    body = Discussion.FINAL_CAPTION.format(
+        title=(Discussion.SPY_TITLE_MANY if len(spies) > 1 else Discussion.SPY_TITLE_ONE),
+        spies=", ".join(spies),
+        word=state.word_text,
+    )
+    return body if state.winner is None else f"{WIN_LINES[state.winner]}\n{body}"
 
 
 async def _replace(

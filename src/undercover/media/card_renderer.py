@@ -9,7 +9,8 @@ from typing import Final, Protocol
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from undercover.texts import Cards
+from undercover.game.models import Winner
+from undercover.texts import WIN_CAPTIONS, Cards
 
 RGB = tuple[int, int, int]
 RGBA = tuple[int, int, int, int]
@@ -541,7 +542,33 @@ def render_speaker_card(name: str) -> bytes:
     )
 
 
-def render_result_card(spy_names: Sequence[str], word: str) -> bytes:
+def render_ballot_card() -> bytes:
+    return _render(
+        BACKGROUND_NEUTRAL,
+        GLOW_COLD,
+        (
+            _caption(Cards.VOTE_CAPTION, INK_MUTED),
+            _headline(Cards.VOTE_HEADLINE),
+            _footnote(Cards.VOTE_FOOTNOTE, INK_MUTED, space_before=56),
+        ),
+    )
+
+
+def render_verdict_card(name: str, is_spy: bool) -> bytes:
+    player = _clean(name, "имя игрока")
+    ink = INK_MUTED_WARM if is_spy else INK_MUTED
+    return _render(
+        BACKGROUND_UNDERCOVER if is_spy else BACKGROUND_NEUTRAL,
+        GLOW_WARM if is_spy else GLOW_COLD,
+        (
+            _caption(Cards.VERDICT_CAPTION, ink),
+            _headline(player),
+            _caption(Cards.VERDICT_SPY if is_spy else Cards.VERDICT_CIVILIAN, ink, space_before=56),
+        ),
+    )
+
+
+def render_result_card(spy_names: Sequence[str], word: str, winner: Winner | None = None) -> bytes:
     if not spy_names:
         raise ValueError("список шпионов не может быть пустым")
 
@@ -554,11 +581,12 @@ def render_result_card(spy_names: Sequence[str], word: str) -> bytes:
         min_size=HINT_MIN_SIZE,
         max_lines=RESULT_WORD_MAX_LINES,
     )
+    banner: _Block = _stamp() if winner is None else _caption(WIN_CAPTIONS[winner], INK_MUTED_WARM)
     return _render(
         BACKGROUND_UNDERCOVER,
         GLOW_WARM,
         (
-            _stamp(),
+            banner,
             _caption(
                 Cards.RESULT_SPIES_CAPTION if len(spy_names) > 1 else Cards.RESULT_SPY_CAPTION,
                 INK_MUTED_WARM,

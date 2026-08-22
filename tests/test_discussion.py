@@ -11,6 +11,7 @@ from discussion_harness import (
     finished,
     log,
     make_state,
+    repainted,
     spoken_names,
     table,
     talking,
@@ -20,8 +21,8 @@ from fake_bot import CHAT_ID, HOST_ID
 from fake_words import WORD, pizza
 from undercover.bot.routers.discussion import TalkAction, TalkCB, expiry_handler
 from undercover.bot.turn_clock import Turn
-from undercover.game.models import GameMode, GameStatus
-from undercover.texts import BAR_EMPTY, Buttons, Discussion, Errors, Timer, countdown_line
+from undercover.game.models import Ballot, Direction, GameMode, GameStatus
+from undercover.texts import BAR_EMPTY, Buttons, Discussion, Errors, Timer, Vote, countdown_line
 
 __all__ = ["log", "table", "words"]
 
@@ -56,8 +57,9 @@ async def test_the_whole_game_from_setup_to_the_final_screen(table: Table) -> No
     assert table.games.stored.discussion_cursor == 1
     assert table.card.texts == (
         Buttons.ANOTHER_ROUND,
+        Buttons.GO_TO_VOTE,
         Buttons.SHOW_SPIES,
-    ), "все высказались — остаётся пойти на второй круг или искать шпиона"
+    ), "все высказались — остаётся пойти на второй круг, голосовать или искать шпиона"
 
     await table.press(Buttons.SHOW_SPIES)
 
@@ -97,7 +99,7 @@ async def test_every_player_speaks_once_and_then_the_hunt_begins(table: Table) -
 
     last = NAMES[state.discussion_order[-1]]
     assert table.card.caption == Discussion.LAST_TALK_CAPTION.format(name=last)
-    assert table.card.texts == (Buttons.ANOTHER_ROUND, Buttons.SHOW_SPIES)
+    assert table.card.texts == (Buttons.ANOTHER_ROUND, Buttons.GO_TO_VOTE, Buttons.SHOW_SPIES)
     assert sorted(spoken_names(table)) == sorted(NAMES)
 
 
@@ -155,7 +157,7 @@ async def test_another_round_waits_until_everyone_has_spoken(table: Table) -> No
         assert Buttons.ANOTHER_ROUND not in table.card.texts
         await table.press(Buttons.NEXT_SPEAKER)
 
-    assert table.card.texts == (Buttons.ANOTHER_ROUND, Buttons.SHOW_SPIES)
+    assert table.card.texts == (Buttons.ANOTHER_ROUND, Buttons.GO_TO_VOTE, Buttons.SHOW_SPIES)
 
 
 async def test_another_round_starts_the_circle_over_in_the_same_order(table: Table) -> None:
@@ -215,7 +217,12 @@ async def test_another_round_does_not_cut_the_current_one_short(table: Table) ->
 
 async def test_a_broken_order_does_not_open_another_round(table: Table) -> None:
     await table.games.save(
-        make_state(names=("Аня", "Борис"), discussion_order=[99, 0], discussion_cursor=1)
+        make_state(
+            names=("Аня", "Борис"),
+            discussion_order=[99, 0],
+            discussion_cursor=1,
+            ballot=Ballot(options=[Direction.ROUND, Direction.VOTE]),
+        )
     )
 
     await table.tap(TalkCB(action=TalkAction.ROUND, session_id=SESSION_ID, cursor=1).pack())
@@ -299,10 +306,13 @@ async def test_a_bystander_still_cannot_move_the_turn(table: Table) -> None:
 
 
 async def test_a_new_round_freezes_the_last_turn_before_the_counter_moves(table: Table) -> None:
-    await all_spoken(table, mode=GameMode.GROUP)
+    ids = (HOST_ID, 22, 33, 44)
+    await all_spoken(table, ids=ids, mode=GameMode.GROUP)
+    data = table.card.callback_data(Buttons.ANOTHER_ROUND)
     frozen_before = len(table.session.calls(EditMessageCaption))
 
-    await table.press(Buttons.ANOTHER_ROUND)
+    for voter_id in ids[:3]:
+        await table.tap(data, user_id=voter_id)
 
     frozen = table.session.calls(EditMessageCaption)[frozen_before]
     assert Discussion.ROUND_PREFIX.format(round=2) not in (frozen.caption or "")
@@ -414,3 +424,122 @@ async def test_a_tick_on_a_broken_order_opens_no_turn(table: Table) -> None:
 
     assert table.games.stored.discussion_cursor == 0
     assert not table.cards
+
+
+async def test_the_last_speaker_offers_both_ways_out_of_the_round(table: Table) -> None:
+    await all_spoken(table)
+
+    assert Buttons.ANOTHER_ROUND in table.card.texts
+    assert Buttons.GO_TO_VOTE in table.card.texts
+
+
+async def test_a_speaker_in_the_middle_of_the_round_offers_neither(table: Table) -> None:
+    await talking(table)
+
+    assert Buttons.GO_TO_VOTE not in table.card.texts
+    assert Buttons.ANOTHER_ROUND not in table.card.texts
+
+
+async def test_the_host_alone_sends_the_hot_seat_table_to_the_vote(table: Table) -> None:
+    await all_spoken(table)
+
+    await table.press(Buttons.GO_TO_VOTE)
+
+    assert table.games.stored.status is GameStatus.VOTING
+
+
+def not_yet(table: Table) -> bool:
+    return table.games.stored.status is GameStatus.DISCUSSION
+
+
+async def test_a_group_needs_half_the_table_plus_one_to_start_voting(table: Table) -> None:
+    ids = (HOST_ID, 22, 33, 44)
+    await all_spoken(table, ids=ids, mode=GameMode.GROUP)
+    data = table.card.callback_data(Buttons.GO_TO_VOTE)
+
+    await table.tap(data, user_id=HOST_ID)
+    assert not_yet(table)
+
+    await table.tap(data, user_id=22)
+    assert not_yet(table)
+
+    await table.tap(data, user_id=33)
+    assert table.games.stored.status is GameStatus.VOTING
+
+
+async def test_a_group_counts_the_direction_votes_out_loud(table: Table) -> None:
+    ids = (HOST_ID, 22, 33, 44)
+    await all_spoken(table, ids=ids, mode=GameMode.GROUP)
+
+    await table.tap(table.card.callback_data(Buttons.GO_TO_VOTE), user_id=22)
+
+    assert Vote.DIRECTION_TALLY.format(round=0, vote=1) in (repainted(table).caption or "")
+
+
+async def test_an_evenly_split_group_keeps_talking(table: Table) -> None:
+    ids = (HOST_ID, 22, 33, 44)
+    await all_spoken(table, ids=ids, mode=GameMode.GROUP)
+    to_vote = table.card.callback_data(Buttons.GO_TO_VOTE)
+    to_round = table.card.callback_data(Buttons.ANOTHER_ROUND)
+
+    await table.tap(to_vote, user_id=HOST_ID)
+    await table.tap(to_vote, user_id=22)
+    await table.tap(to_round, user_id=33)
+    await table.tap(to_round, user_id=44)
+
+    stored = table.games.stored
+    assert stored.status is GameStatus.DISCUSSION
+    assert stored.discussion_round == 2
+
+
+async def test_nobody_votes_for_the_direction_twice(table: Table) -> None:
+    ids = (HOST_ID, 22, 33, 44)
+    await all_spoken(table, ids=ids, mode=GameMode.GROUP)
+    data = table.card.callback_data(Buttons.GO_TO_VOTE)
+
+    await table.tap(data, user_id=22)
+    await table.tap(data, user_id=22)
+
+    assert Vote.ALREADY_VOTED in table.alerts
+    assert table.games.stored.status is GameStatus.DISCUSSION
+
+
+async def test_the_ballot_is_open_only_on_the_last_turn(table: Table) -> None:
+    state = await talking(table)
+    assert state.ballot is None
+
+    for _ in range(len(state.discussion_order) - 1):
+        await table.press(Buttons.NEXT_SPEAKER)
+
+    ballot = table.games.stored.ballot
+    assert ballot is not None
+    assert ballot.options == [Direction.ROUND, Direction.VOTE]
+
+
+async def test_a_new_round_starts_with_a_clean_ballot(table: Table) -> None:
+    await all_spoken(table)
+
+    await table.press(Buttons.ANOTHER_ROUND)
+
+    assert table.games.stored.ballot is None
+
+
+async def test_another_round_keeps_the_order_the_table_already_knows(table: Table) -> None:
+    state = await all_spoken(table)
+
+    await table.press(Buttons.ANOTHER_ROUND)
+
+    assert table.games.stored.discussion_order == state.discussion_order
+
+
+async def test_the_direction_vote_silences_the_clock(table: Table) -> None:
+    ids = (HOST_ID, 22, 33, 44)
+    await all_spoken(table, ids=ids, mode=GameMode.GROUP, turn_seconds=60)
+
+    await table.tap(table.card.callback_data(Buttons.GO_TO_VOTE), user_id=22)
+
+    assert table.keeper.clock.running == frozenset()
+
+
+def test_the_direction_keys_of_the_ballot_match_the_buttons() -> None:
+    assert {action.value for action in TalkAction} >= {direction.value for direction in Direction}

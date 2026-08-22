@@ -3,13 +3,16 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from undercover.game.models import Winner
 from undercover.media.card_renderer import (
     CARD_SUFFIX,
+    render_ballot_card,
     render_civilian_card,
     render_hidden_card,
     render_result_card,
     render_speaker_card,
     render_spy_card,
+    render_verdict_card,
 )
 
 LOG_FORMAT = "%(asctime)s %(levelname)-8s %(name)s: %(message)s"
@@ -40,6 +43,11 @@ def build_samples() -> tuple[Sample, ...]:
             "result_many_spies",
             render_result_card(("Аня", "Владислав-Иннокентий", "Гера"), "новогодняя ёлка"),
         ),
+        Sample("ballot", render_ballot_card()),
+        Sample("verdict_spy", render_verdict_card("Аня", is_spy=True)),
+        Sample("verdict_civilian", render_verdict_card("Владислав-Иннокентий", is_spy=False)),
+        Sample("result_civilians_win", render_result_card(("Аня",), "пицца", Winner.CIVILIANS)),
+        Sample("result_spies_win", render_result_card(("Аня", "Гера"), "пицца", Winner.SPIES)),
         Sample(
             "spy_long_hint",
             render_spy_card(

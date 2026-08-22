@@ -13,12 +13,14 @@ from undercover.bot.boards import board_for
 from undercover.bot.guards import load_discussion
 from undercover.bot.keyboards import button
 from undercover.bot.message_utils import as_photo
+from undercover.bot.routers.reveal import PhaseStarter
 from undercover.bot.turn_clock import OnExpire, Turn, TurnKeeper, TurnView, timed_caption
 from undercover.game.engine import build_discussion_order
-from undercover.game.models import GameSessionState, GameStatus
+from undercover.game.models import Direction, GameSessionState, GameStatus
+from undercover.game.voting import alive, cast, close_ballot, direction_result, open_ballot, tally
 from undercover.media.card_renderer import CARD_SUFFIX, render_speaker_card
 from undercover.redis.game_state import GameStateRepository
-from undercover.texts import Buttons, Discussion, Errors, Timer
+from undercover.texts import VOTE_REFUSALS, Buttons, Discussion, Errors, Timer, Vote
 from undercover.utils.secure_random import secure_rng
 
 logger = logging.getLogger(__name__)
@@ -29,6 +31,7 @@ BROKEN_ORDER: Final = "порядок высказываний испорчен"
 class TalkAction(StrEnum):
     NEXT = "next"
     ROUND = "round"
+    VOTE = "vote"
     SPIES = "spies"
 
 
@@ -38,7 +41,7 @@ class TalkCB(CallbackData, prefix="talk"):
     cursor: int
 
 
-def create_discussion_router(keeper: TurnKeeper) -> Router:
+def create_discussion_router(keeper: TurnKeeper, start_voting: PhaseStarter) -> Router:
     router = Router(name="discussion")
 
     @router.callback_query(TalkCB.filter(F.action == TalkAction.NEXT))
@@ -68,8 +71,8 @@ def create_discussion_router(keeper: TurnKeeper) -> Router:
             await open_turn(bot, games, state, next_cursor, keeper)
             await callback.answer()
 
-    @router.callback_query(TalkCB.filter(F.action == TalkAction.ROUND))
-    async def cb_another_round(
+    @router.callback_query(TalkCB.filter(F.action.in_({TalkAction.ROUND, TalkAction.VOTE})))
+    async def cb_direction(
         callback: CallbackQuery,
         callback_data: TalkCB,
         games: GameStateRepository,
@@ -82,6 +85,31 @@ def create_discussion_router(keeper: TurnKeeper) -> Router:
             if not _round_is_over(state, callback_data.cursor):
                 await callback.answer(Errors.STALE_TURN, show_alert=True)
                 return
+
+            refusal = cast(state, callback.from_user.id, Direction(callback_data.action))
+            if refusal is not None:
+                await callback.answer(VOTE_REFUSALS[refusal], show_alert=True)
+                return
+
+            keeper.clock.stop(state.session_id)
+            chosen = direction_result(state)
+            if chosen is None:
+                await games.save(state)
+                await close_turn(
+                    bot,
+                    state,
+                    "",
+                    _speaker_keyboard(state, state.discussion_cursor, is_last=True),
+                )
+                await callback.answer()
+                return
+
+            if chosen is Direction.VOTE:
+                await close_turn(bot, state, _spent(state))
+                await start_voting(bot, games, state)
+                await callback.answer()
+                return
+
             if _speaker_name(state, 0) is None:
                 await report_broken(callback, state)
                 return
@@ -98,7 +126,7 @@ async def start_discussion(
     bot: Bot, games: GameStateRepository, state: GameSessionState, keeper: TurnKeeper
 ) -> None:
     state.status = GameStatus.DISCUSSION
-    state.discussion_order = build_discussion_order(state.players, secure_rng())
+    state.discussion_order = build_discussion_order(alive(state), secure_rng())
     await open_turn(bot, games, state, 0, keeper)
 
 
@@ -112,12 +140,17 @@ async def open_turn(
     name = state.players[state.discussion_order[cursor]].name
     is_last = cursor == len(state.discussion_order) - 1
 
+    if is_last:
+        open_ballot(state, [Direction.ROUND, Direction.VOTE])
+    else:
+        close_ballot(state)
+
     image = await asyncio.to_thread(render_speaker_card, name)
     keyboard = _speaker_keyboard(state, cursor, is_last)
     caption = speaker_caption(state, cursor)
     state.turn_deadline = _deadline(state)
 
-    message_id = await board_for(state).open_turn(
+    message_id = await board_for(state).show(
         bot,
         state,
         as_photo(image, f"speaker_{cursor}.{CARD_SUFFIX}"),
@@ -144,7 +177,7 @@ async def close_turn(
     keyboard: InlineKeyboardMarkup | None = None,
 ) -> None:
     caption = speaker_caption(state, state.discussion_cursor)
-    await board_for(state).close_turn(
+    await board_for(state).revise(
         bot, state, f"{caption}\n{marker}" if marker else caption, keyboard
     )
 
@@ -170,7 +203,7 @@ def speaker_caption(state: GameSessionState, cursor: int) -> str:
             position=cursor + 1, total=len(state.discussion_order), name=name
         )
     )
-    return _round_prefix(state) + body
+    return _round_prefix(state) + body + _direction_tally(state)
 
 
 async def _expire_turn(
@@ -200,6 +233,16 @@ async def _expire_turn(
 
         await close_turn(bot, state, Timer.EXPIRED)
         await open_turn(bot, games, state, next_cursor, keeper)
+
+
+def _direction_tally(state: GameSessionState) -> str:
+    ballot = state.ballot
+    if ballot is None or not ballot.votes:
+        return ""
+    counts = tally(ballot)
+    return "\n" + Vote.DIRECTION_TALLY.format(
+        round=counts[Direction.ROUND], vote=counts[Direction.VOTE]
+    )
 
 
 def _deadline(state: GameSessionState) -> datetime | None:
@@ -240,10 +283,13 @@ def _speaker_keyboard(state: GameSessionState, cursor: int, is_last: bool) -> In
         return button(text, TalkCB(action=action, session_id=state.session_id, cursor=cursor))
 
     forward = (
-        talk_button(Buttons.ANOTHER_ROUND, TalkAction.ROUND)
+        [
+            talk_button(Buttons.ANOTHER_ROUND, TalkAction.ROUND),
+            talk_button(Buttons.GO_TO_VOTE, TalkAction.VOTE),
+        ]
         if is_last
-        else talk_button(Buttons.NEXT_SPEAKER, TalkAction.NEXT)
+        else [talk_button(Buttons.NEXT_SPEAKER, TalkAction.NEXT)]
     )
     return InlineKeyboardMarkup(
-        inline_keyboard=[[forward], [talk_button(Buttons.SHOW_SPIES, TalkAction.SPIES)]]
+        inline_keyboard=[forward, [talk_button(Buttons.SHOW_SPIES, TalkAction.SPIES)]]
     )

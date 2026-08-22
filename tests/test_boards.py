@@ -5,7 +5,7 @@ from aiogram.methods import EditMessageCaption, EditMessageMedia, SendPhoto
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from fake_bot import CHAT_ID, FIRST_MESSAGE_ID, HOST_ID, FakeSession, make_bot
-from undercover.bot.boards import FeedBoard, SingleCardBoard, board_for
+from undercover.bot.boards import FeedBoard, PhaseBoard, SingleCardBoard, board_for
 from undercover.game.models import GameMode, GameSessionState, GameStatus, PlayerState
 
 SESSION_ID: Final = "11111111-1111-1111-1111-111111111111"
@@ -36,7 +36,7 @@ def test_board_is_chosen_by_the_mode_of_the_session() -> None:
 async def test_hot_seat_keeps_the_whole_game_in_one_message() -> None:
     session = FakeSession()
 
-    message_id = await SingleCardBoard().open_turn(
+    message_id = await SingleCardBoard().show(
         make_bot(session), make_state(GameMode.HOT_SEAT), "photo-id", "Говорит: Аня", KEYBOARD
     )
 
@@ -48,9 +48,7 @@ async def test_hot_seat_keeps_the_whole_game_in_one_message() -> None:
 async def test_hot_seat_freezes_nothing_because_nothing_scrolls_away() -> None:
     session = FakeSession()
 
-    await SingleCardBoard().close_turn(
-        make_bot(session), make_state(GameMode.HOT_SEAT), "Говорит: Аня"
-    )
+    await SingleCardBoard().revise(make_bot(session), make_state(GameMode.HOT_SEAT), "Говорит: Аня")
 
     assert session.requests == []
 
@@ -58,7 +56,7 @@ async def test_hot_seat_freezes_nothing_because_nothing_scrolls_away() -> None:
 async def test_the_group_gets_a_fresh_message_for_every_speaker() -> None:
     session = FakeSession()
 
-    message_id = await FeedBoard().open_turn(
+    message_id = await FeedBoard().show(
         make_bot(session), make_state(GameMode.GROUP), "photo-id", "Говорит: Аня", KEYBOARD
     )
 
@@ -70,7 +68,7 @@ async def test_the_group_gets_a_fresh_message_for_every_speaker() -> None:
 async def test_the_finished_turn_loses_its_buttons_and_keeps_a_report() -> None:
     session = FakeSession()
 
-    await FeedBoard().close_turn(
+    await FeedBoard().revise(
         make_bot(session), make_state(GameMode.GROUP), "Говорит: Аня\nВремя вышло"
     )
 
@@ -83,7 +81,7 @@ async def test_the_finished_turn_loses_its_buttons_and_keeps_a_report() -> None:
 async def test_the_first_turn_of_a_group_game_has_nothing_to_freeze() -> None:
     session = FakeSession()
 
-    await FeedBoard().close_turn(
+    await FeedBoard().revise(
         make_bot(session), make_state(GameMode.GROUP, message_id=None), "Говорит: Аня"
     )
 
@@ -96,15 +94,33 @@ async def test_a_deleted_turn_message_does_not_break_the_game() -> None:
         method=EditMessageCaption(caption="x"), message="message to edit not found"
     )
 
-    await FeedBoard().close_turn(make_bot(session), make_state(GameMode.GROUP), "Говорит: Аня")
+    await FeedBoard().revise(make_bot(session), make_state(GameMode.GROUP), "Говорит: Аня")
 
 
 async def test_a_frozen_turn_can_keep_its_buttons_when_the_round_is_over() -> None:
     session = FakeSession()
 
-    await FeedBoard().close_turn(
+    await FeedBoard().revise(
         make_bot(session), make_state(GameMode.GROUP), "Говорит: Аня", KEYBOARD
     )
 
     (frozen,) = session.calls(EditMessageCaption)
     assert frozen.reply_markup == KEYBOARD
+
+
+async def test_a_live_screen_can_be_repainted_with_new_buttons() -> None:
+    session = FakeSession()
+
+    await FeedBoard().revise(
+        make_bot(session), make_state(GameMode.GROUP), "Проголосовали 2 из 4", KEYBOARD
+    )
+
+    (repainted,) = session.calls(EditMessageCaption)
+    assert repainted.caption == "Проголосовали 2 из 4"
+    assert repainted.reply_markup == KEYBOARD
+
+
+def test_both_boards_satisfy_the_phase_protocol() -> None:
+    boards: tuple[PhaseBoard, ...] = (SingleCardBoard(), FeedBoard())
+
+    assert len(boards) == 2

@@ -17,6 +17,7 @@ from undercover.bot.routers.lobby import create_lobby_router
 from undercover.bot.routers.reveal import create_reveal_router, start_reveal
 from undercover.bot.routers.setup_dialog import create_setup_dialog
 from undercover.bot.routers.start import create_start_router
+from undercover.bot.routers.voting import create_voting_router, start_voting
 from undercover.bot.turn_clock import TurnClock, TurnKeeper
 from undercover.config import Settings
 from undercover.db.repositories.game_log import game_log_writer
@@ -50,12 +51,14 @@ def create_dispatcher(dependencies: AppDependencies) -> Dispatcher:
 
     keeper = TurnKeeper(clock=TurnClock(), locks=KeyedLocks())
     begin_discussion = partial(start_discussion, keeper=keeper)
+    begin_voting = partial(start_voting, keeper=keeper)
 
     dispatcher.include_router(create_start_router(open_words))
     dispatcher.include_router(create_lobby_router(open_words, begin_discussion))
     dispatcher.include_router(create_setup_dialog(open_words, start_reveal))
     dispatcher.include_router(create_reveal_router(begin_discussion))
-    dispatcher.include_router(create_discussion_router(keeper))
+    dispatcher.include_router(create_discussion_router(keeper, begin_voting))
+    dispatcher.include_router(create_voting_router(keeper, begin_discussion, log_game))
     dispatcher.include_router(create_finale_router(open_words, log_game, keeper, begin_discussion))
     dispatcher.include_router(create_error_router())
 

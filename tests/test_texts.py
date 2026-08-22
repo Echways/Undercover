@@ -6,6 +6,8 @@ import pytest
 
 import undercover.bot
 from undercover import texts
+from undercover.game.models import Winner
+from undercover.game.voting import Refusal
 from undercover.media import card_renderer
 
 BOT_PACKAGE = Path(undercover.bot.__file__).parent
@@ -29,6 +31,7 @@ SCREENS = (
     texts.Setup,
     texts.Reveal,
     texts.Discussion,
+    texts.Vote,
     texts.Timer,
     texts.Errors,
     texts.Cards,
@@ -160,3 +163,14 @@ def test_the_guard_notices_a_caption_that_slipped_back() -> None:
     slipped = 'HIDDEN_CAPTION: Final = "ПЕРЕДАЙТЕ ТЕЛЕФОН"'
 
     assert module_level_russian_constants(slipped) == ["ПЕРЕДАЙТЕ ТЕЛЕФОН"]
+
+
+def test_every_refusal_has_something_to_say() -> None:
+    for refusal in Refusal:
+        assert texts.VOTE_REFUSALS[refusal].strip()
+
+
+def test_every_winner_has_a_caption_and_a_line() -> None:
+    for winner in Winner:
+        assert texts.WIN_CAPTIONS[winner].strip()
+        assert texts.WIN_LINES[winner].strip()

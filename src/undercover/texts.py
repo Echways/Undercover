@@ -1,7 +1,9 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Final
 
 from undercover.game.engine import MAX_NAME_LENGTH, MAX_PLAYERS, MIN_PLAYERS
+from undercover.game.models import Winner
+from undercover.game.voting import Refusal
 
 BRAND: Final = "Undercover"
 
@@ -134,6 +136,28 @@ class Discussion:
     ALL_SPOKE: Final = "Высказались все — время искать шпиона."
 
 
+class Vote:
+    DIRECTION_TALLY: Final = "Ещё круг — {round}, голосуем — {vote}"
+    HOT_SEAT_PROMPT: Final = "Стол решил — отметьте, кто выбывает."
+    PROGRESS: Final = "Проголосовали {given} из {total}"
+
+    ALREADY_VOTED: Final = "Ваш голос уже учтён."
+    NOT_A_VOTER: Final = "Вы не в этой партии."
+    IS_OUT: Final = "Вы выбыли — голосуют оставшиеся."
+
+    TIE: Final = "Голоса разделились. Переголосуем между лидерами."
+    NO_ELIMINATION: Final = "Голоса снова разделились — никто не выбывает."
+
+    VERDICT_SPY: Final = "{name} выбывает. Это был шпион."
+    VERDICT_CIVILIAN: Final = "{name} выбывает. Это был мирный житель."
+    TALLY_LINE: Final = "{name} — {votes}"
+
+    CIVILIANS_WIN: Final = "Шпионов не осталось. Победа мирных."
+    SPIES_WIN: Final = "Шпионов столько же, сколько мирных. Победа шпионов."
+
+    WRONG_PHASE: Final = "Голосование уже закончено."
+
+
 class Timer:
     COUNTDOWN: Final = "{bar}  {seconds} с"
     SPENT: Final = "Время хода: {seconds} с"
@@ -183,6 +207,10 @@ class Buttons:
     NEXT_SPEAKER: Final = "Следующий игрок"
     ANOTHER_ROUND: Final = "Ещё круг"
     SHOW_SPIES: Final = "Раскрыть карты"
+    GO_TO_VOTE: Final = "Голосовать"
+    BACK_TO_TALK: Final = "Вернуться к обсуждению"
+    CONTINUE_TALK: Final = "Продолжить обсуждение"
+    SHOW_RESULT: Final = "Итог партии"
     PLAY_AGAIN: Final = "Ещё партия"
     NEW_GAME: Final = "Новый состав"
 
@@ -201,6 +229,17 @@ class Cards:
     SPEAKER_CAPTION: Final = "СЕЙЧАС ГОВОРИТ"
     SPEAKER_FOOTNOTE: Final = "Одна ассоциация вслух — и передайте телефон"
 
+    VOTE_CAPTION: Final = "ГОЛОСОВАНИЕ"
+    VOTE_HEADLINE: Final = "Кого выбиваем"
+    VOTE_FOOTNOTE: Final = "Один голос на игрока"
+
+    VERDICT_CAPTION: Final = "ВЫБЫВАЕТ"
+    VERDICT_SPY: Final = "ШПИОН"
+    VERDICT_CIVILIAN: Final = "МИРНЫЙ ЖИТЕЛЬ"
+
+    WIN_CIVILIANS: Final = "ПОБЕДА МИРНЫХ"
+    WIN_SPIES: Final = "ПОБЕДА ШПИОНОВ"
+
     RESULT_SPY_CAPTION: Final = "ШПИОН"
     RESULT_SPIES_CAPTION: Final = "ШПИОНЫ"
     RESULT_WORD_CAPTION: Final = "ЗАГАДАННОЕ СЛОВО"
@@ -209,6 +248,24 @@ class Cards:
 BAR_CELLS: Final = 10
 BAR_FULL: Final = "█"
 BAR_EMPTY: Final = "░"
+
+
+VOTE_REFUSALS: Final[Mapping[Refusal, str]] = {
+    Refusal.NOT_A_VOTER: Vote.NOT_A_VOTER,
+    Refusal.IS_OUT: Vote.IS_OUT,
+    Refusal.ALREADY_VOTED: Vote.ALREADY_VOTED,
+    Refusal.UNKNOWN_OPTION: Errors.STALE_TURN,
+}
+
+WIN_CAPTIONS: Final[Mapping[Winner, str]] = {
+    Winner.CIVILIANS: Cards.WIN_CIVILIANS,
+    Winner.SPIES: Cards.WIN_SPIES,
+}
+
+WIN_LINES: Final[Mapping[Winner, str]] = {
+    Winner.CIVILIANS: Vote.CIVILIANS_WIN,
+    Winner.SPIES: Vote.SPIES_WIN,
+}
 
 
 def empty_catalog_text(category_ids: Sequence[int]) -> str:
