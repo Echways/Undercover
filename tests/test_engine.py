@@ -23,7 +23,13 @@ from undercover.game.engine import (
     max_spies_count,
     pick_word,
 )
-from undercover.game.models import GameSessionState, GameStatus, PlayerState, WordWithHints
+from undercover.game.models import (
+    GameMode,
+    GameSessionState,
+    GameStatus,
+    PlayerState,
+    WordWithHints,
+)
 
 SEED = 20260821
 
@@ -453,3 +459,36 @@ def test_words_repository_fits_the_words_source_protocol() -> None:
     assert inspect.iscoroutinefunction(WordsRepository.get_random_active_word)
     assert all(hasattr(Word, name) for name in ("id", "text", "hints"))
     assert hasattr(SpyHint, "hint_text")
+
+
+def test_player_ids_land_on_the_players_in_the_same_order() -> None:
+    players = assign_roles(
+        ["Аня", "Боря", "Вера"], spies_count=1, rng=rng(), player_ids=[10, 20, 30]
+    )
+
+    assert [player.user_id for player in players] == [10, 20, 30]
+
+
+def test_players_have_no_telegram_id_when_none_were_given() -> None:
+    players = assign_roles(["Аня", "Боря"], spies_count=1, rng=rng())
+
+    assert [player.user_id for player in players] == [None, None]
+
+
+def test_a_short_list_of_ids_is_a_rules_error() -> None:
+    with pytest.raises(GameRulesError):
+        assign_roles(["Аня", "Боря"], spies_count=1, rng=rng(), player_ids=[10])
+
+
+async def test_create_session_carries_mode_and_ids_through() -> None:
+    state = await make_session(players_count=2, player_ids=[10, 20], mode=GameMode.GROUP)
+
+    assert state.mode is GameMode.GROUP
+    assert [player.user_id for player in state.players] == [10, 20]
+
+
+async def test_a_session_is_hot_seat_and_anonymous_by_default() -> None:
+    state = await make_session(players_count=2)
+
+    assert state.mode is GameMode.HOT_SEAT
+    assert [player.user_id for player in state.players] == [None, None]

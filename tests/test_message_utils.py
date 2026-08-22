@@ -1,6 +1,12 @@
 import pytest
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.methods import DeleteMessage, EditMessageMedia, SendPhoto
+from aiogram.methods import (
+    DeleteMessage,
+    EditMessageMedia,
+    EditMessageText,
+    SendMessage,
+    SendPhoto,
+)
 from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 
 from fake_bot import (
@@ -11,9 +17,14 @@ from fake_bot import (
     make_bot,
     photo_message,
 )
-from undercover.bot.message_utils import photo_file_id, show_or_advance_card
+from undercover.bot.message_utils import (
+    photo_file_id,
+    show_or_advance_card,
+    show_or_resend_text,
+)
 
 CAPTION = "Ход 1 из 4"
+ROSTER = "Undercover — набор в партию."
 KEYBOARD = InlineKeyboardMarkup(
     inline_keyboard=[
         [InlineKeyboardButton(text="Посмотреть карточку", callback_data="reveal:show")]
@@ -108,3 +119,50 @@ async def test_cached_file_id_is_forwarded_as_is(session: FakeSession) -> None:
 
 def test_photo_file_id_takes_the_largest_variant() -> None:
     assert photo_file_id(photo_message(FIRST_MESSAGE_ID)) == f"photo-{FIRST_MESSAGE_ID}"
+
+
+async def test_first_call_sends_and_returns_the_new_message_id(session: FakeSession) -> None:
+    message_id = await show_or_resend_text(make_bot(session), CHAT_ID, None, ROSTER)
+
+    assert session.calls(SendMessage)
+    assert message_id == SENT_MESSAGE_ID
+
+
+async def test_later_calls_edit_in_place_and_keep_the_message_id(session: FakeSession) -> None:
+    message_id = await show_or_resend_text(make_bot(session), CHAT_ID, FIRST_MESSAGE_ID, ROSTER)
+
+    assert session.calls(EditMessageText)
+    assert not session.calls(SendMessage)
+    assert message_id == FIRST_MESSAGE_ID
+
+
+async def test_a_deleted_message_is_replaced_by_a_fresh_one(session: FakeSession) -> None:
+    session.failures[EditMessageText] = TelegramBadRequest(
+        method=EditMessageText(text=ROSTER), message="message to edit not found"
+    )
+
+    message_id = await show_or_resend_text(make_bot(session), CHAT_ID, FIRST_MESSAGE_ID, ROSTER)
+
+    assert session.calls(SendMessage)
+    assert message_id == SENT_MESSAGE_ID
+
+
+async def test_an_unchanged_roster_does_not_produce_a_duplicate_message(
+    session: FakeSession,
+) -> None:
+    session.failures[EditMessageText] = TelegramBadRequest(
+        method=EditMessageText(text=ROSTER),
+        message="Bad Request: message is not modified",
+    )
+
+    message_id = await show_or_resend_text(make_bot(session), CHAT_ID, FIRST_MESSAGE_ID, ROSTER)
+
+    assert not session.calls(SendMessage)
+    assert message_id == FIRST_MESSAGE_ID
+
+
+async def test_the_keyboard_travels_with_the_text(session: FakeSession) -> None:
+    await show_or_resend_text(make_bot(session), CHAT_ID, None, ROSTER, KEYBOARD)
+
+    (sent,) = session.calls(SendMessage)
+    assert sent.reply_markup == KEYBOARD

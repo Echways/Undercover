@@ -11,6 +11,7 @@ from undercover.config import Settings
 from undercover.db.session import check_database_connection, create_engine, create_sessionmaker
 from undercover.redis.client import check_redis_connection, create_redis_client
 from undercover.redis.game_state import GameStateRepository
+from undercover.redis.lobby_state import LobbyRepository
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ class AppDependencies:
     sessionmaker: async_sessionmaker[AsyncSession]
     redis: Redis
     games: GameStateRepository
+    lobbies: LobbyRepository
 
     def as_workflow_data(self) -> dict[str, Any]:
         return {
@@ -33,6 +35,7 @@ class AppDependencies:
             "sessionmaker": self.sessionmaker,
             "redis": self.redis,
             "games": self.games,
+            "lobbies": self.lobbies,
         }
 
     async def check_connections(self) -> None:
@@ -63,6 +66,7 @@ def build_dependencies(settings: Settings) -> AppDependencies:
         sessionmaker=create_sessionmaker(engine),
         redis=redis,
         games=GameStateRepository(redis),
+        lobbies=LobbyRepository(redis),
     )
 
 

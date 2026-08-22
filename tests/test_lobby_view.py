@@ -1,0 +1,86 @@
+from typing import Final
+
+from fake_words import catalog
+from undercover.bot.lobby_view import LobbyAction, LobbyCB, lobby_keyboard, lobby_text
+from undercover.game.engine import MAX_PLAYERS
+from undercover.game.models import LobbyPlayer, LobbyState, LobbyView
+from undercover.texts import Buttons, Lobby
+
+CHAT_ID: Final = -1001234567890
+CATALOG: Final = catalog("Еда", "Города")
+
+
+def lobby(players: int = 0, **overrides: object) -> LobbyState:
+    defaults: dict[str, object] = {
+        "chat_id": CHAT_ID,
+        "host_user_id": 777,
+        "players": [LobbyPlayer(user_id=index, name=f"Игрок-{index}") for index in range(players)],
+    }
+    return LobbyState.model_validate(defaults | overrides)
+
+
+def texts_of(lobby_state: LobbyState) -> list[str]:
+    return [
+        item.text for row in lobby_keyboard(lobby_state, CATALOG).inline_keyboard for item in row
+    ]
+
+
+def test_an_empty_lobby_says_so_instead_of_showing_an_empty_list() -> None:
+    assert Lobby.EMPTY_ROSTER in lobby_text(lobby(), CATALOG)
+
+
+def test_the_roster_is_numbered_from_one_and_shows_the_ceiling() -> None:
+    text = lobby_text(lobby(2), CATALOG)
+
+    assert "1. Игрок-0" in text
+    assert "2. Игрок-1" in text
+    assert str(MAX_PLAYERS) in text
+
+
+def test_the_summary_says_whole_dictionary_when_nothing_is_chosen() -> None:
+    assert "весь словарь" in lobby_text(lobby(3), CATALOG)
+
+
+def test_the_summary_lists_the_chosen_categories_by_title() -> None:
+    text = lobby_text(lobby(3, category_ids=[1]), CATALOG)
+
+    assert "Еда" in text
+    assert "Города" not in text
+
+
+def test_the_roster_keyboard_carries_join_leave_settings_and_start() -> None:
+    assert texts_of(lobby(2)) == [
+        Buttons.JOIN_LOBBY,
+        Buttons.LEAVE_LOBBY,
+        Buttons.SPIES_COUNT.format(count=1),
+        Buttons.CHANGE_CATEGORIES,
+        Buttons.PLAY,
+    ]
+
+
+def test_a_one_category_dictionary_offers_no_choice() -> None:
+    single = [
+        item.text
+        for row in lobby_keyboard(lobby(2), catalog("Еда")).inline_keyboard
+        for item in row
+    ]
+
+    assert Buttons.CHANGE_CATEGORIES not in single
+    assert Buttons.JOIN_LOBBY in single
+
+
+def test_the_category_view_marks_the_chosen_ones_and_offers_done() -> None:
+    state = lobby(2, view=LobbyView.CATEGORIES, category_ids=[1])
+
+    assert Lobby.PICK_CATEGORIES in lobby_text(state, CATALOG)
+    assert texts_of(state) == [
+        Lobby.CATEGORY_CHOSEN.format(title="Еда"),
+        Lobby.CATEGORY_FREE.format(title="Города"),
+        Buttons.CATEGORIES_DONE,
+    ]
+
+
+def test_callback_data_fits_the_telegram_limit() -> None:
+    packed = LobbyCB(action=LobbyAction.CATEGORY, value=999999).pack()
+
+    assert len(packed.encode()) <= 64

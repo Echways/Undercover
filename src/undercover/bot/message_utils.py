@@ -1,4 +1,5 @@
 import logging
+from typing import Final
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
@@ -13,6 +14,8 @@ from aiogram.types import (
 logger = logging.getLogger(__name__)
 
 Photo = InputFile | str
+
+NOT_MODIFIED: Final = "message is not modified"
 
 
 async def show_or_advance_card(
@@ -42,6 +45,29 @@ async def show_or_advance_card(
 
     await _delete_quietly(bot, chat_id, message_id)
     return await _send_card(bot, chat_id, photo, caption, keyboard)
+
+
+async def show_or_resend_text(
+    bot: Bot,
+    chat_id: int,
+    message_id: int | None,
+    text: str,
+    keyboard: InlineKeyboardMarkup | None = None,
+) -> int:
+    if message_id is not None:
+        try:
+            await bot.edit_message_text(
+                text, chat_id=chat_id, message_id=message_id, reply_markup=keyboard
+            )
+        except TelegramBadRequest as error:
+            if NOT_MODIFIED in str(error):
+                return message_id
+            logger.info("правка текста %s не удалась (%s), шлём новое", message_id, error)
+        else:
+            return message_id
+
+    sent = await bot.send_message(chat_id, text, reply_markup=keyboard)
+    return sent.message_id
 
 
 def as_photo(image: bytes | str, filename: str) -> Photo:

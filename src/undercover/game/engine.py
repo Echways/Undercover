@@ -1,9 +1,16 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from contextlib import AbstractAsyncContextManager
 from random import Random
 from typing import Final, Protocol
 from uuid import UUID
 
-from undercover.game.models import GameSessionState, GameStatus, PlayerState, WordWithHints
+from undercover.game.models import (
+    GameMode,
+    GameSessionState,
+    GameStatus,
+    PlayerState,
+    WordWithHints,
+)
 
 MIN_PLAYERS: Final = 2
 MAX_PLAYERS: Final = 16
@@ -38,15 +45,44 @@ class WordsSource(Protocol):
     async def get_random_active_word(self, category_id: int | None = None) -> WordRecord | None: ...
 
 
+class CategoryRecord(Protocol):
+    @property
+    def id(self) -> int: ...
+
+    @property
+    def title(self) -> str: ...
+
+
+class Catalog(WordsSource, Protocol):
+    async def list_playable_categories(self) -> Sequence[CategoryRecord]: ...
+
+
+CatalogFactory = Callable[[], AbstractAsyncContextManager[Catalog]]
+WordsSourceFactory = Callable[[], AbstractAsyncContextManager[WordsSource]]
+
+
 def max_spies_count(players_count: int) -> int:
     return max(1, players_count // 3)
 
 
-def assign_roles(player_names: Sequence[str], spies_count: int, rng: Random) -> list[PlayerState]:
+def assign_roles(
+    player_names: Sequence[str],
+    spies_count: int,
+    rng: Random,
+    player_ids: Sequence[int] | None = None,
+) -> list[PlayerState]:
     players_count = len(player_names)
     if not MIN_PLAYERS <= players_count <= MAX_PLAYERS:
         raise GameRulesError(
             f"игроков должно быть от {MIN_PLAYERS} до {MAX_PLAYERS}, а не {players_count}"
+        )
+
+    ids: tuple[int | None, ...] = (
+        tuple(player_ids) if player_ids is not None else (None,) * players_count
+    )
+    if len(ids) != players_count:
+        raise GameRulesError(
+            f"идентификаторов {len(ids)}, а игроков {players_count} — состав не сходится"
         )
 
     limit = max_spies_count(players_count)
@@ -57,7 +93,12 @@ def assign_roles(player_names: Sequence[str], spies_count: int, rng: Random) -> 
 
     spies = set(rng.sample(range(players_count), spies_count))
     return [
-        PlayerState(order_index=order_index, name=name, is_spy=order_index in spies)
+        PlayerState(
+            order_index=order_index,
+            name=name,
+            is_spy=order_index in spies,
+            user_id=ids[order_index],
+        )
         for order_index, name in enumerate(player_names)
     ]
 
@@ -116,13 +157,16 @@ async def create_session(
     words: WordsSource,
     rng: Random,
     category_ids: Sequence[int] | None = None,
+    player_ids: Sequence[int] | None = None,
+    mode: GameMode = GameMode.HOT_SEAT,
 ) -> GameSessionState:
-    players = assign_roles(player_names, spies_count, rng)
+    players = assign_roles(player_names, spies_count, rng, player_ids)
     word = await pick_word(words, category_ids, rng)
     return GameSessionState(
         session_id=str(UUID(int=rng.getrandbits(128), version=4)),
         chat_id=chat_id,
         host_user_id=host_user_id,
+        mode=mode,
         status=GameStatus.SETUP,
         players=players,
         word_id=word.word_id,

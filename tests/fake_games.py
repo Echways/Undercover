@@ -22,6 +22,10 @@ class FakeGameStateRepository(GameStateRepository):
         self._states.pop(session_id, None)
 
     @property
+    def is_empty(self) -> bool:
+        return not self._states
+
+    @property
     def stored(self) -> GameSessionState:
         (state,) = self._states.values()
         return state

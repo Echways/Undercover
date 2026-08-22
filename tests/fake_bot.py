@@ -8,7 +8,10 @@ from aiogram.client.session.base import BaseSession
 from aiogram.methods import (
     AnswerCallbackQuery,
     DeleteMessage,
+    EditMessageCaption,
     EditMessageMedia,
+    EditMessageText,
+    GetMe,
     SendMessage,
     SendPhoto,
     SetMyCommands,
@@ -69,6 +72,14 @@ class FakeSession(BaseSession):
         if isinstance(method, EditMessageMedia):
             assert method.message_id is not None
             return photo_message(method.message_id)
+        if isinstance(method, EditMessageCaption):
+            assert method.message_id is not None
+            return photo_message(method.message_id)
+        if isinstance(method, EditMessageText):
+            assert method.message_id is not None
+            return text_message(method.message_id, method.text or "")
+        if isinstance(method, GetMe):
+            return User(id=1, is_bot=True, first_name="Undercover", username="undercover_bot")
         if isinstance(method, SendMessage):
             return text_message(next(self._message_ids), method.text)
         if isinstance(method, (DeleteMessage, AnswerCallbackQuery, SetMyCommands)):
@@ -130,6 +141,7 @@ def message_update(
     *,
     user_id: int = HOST_ID,
     chat_id: int = CHAT_ID,
+    chat_type: str = "group",
     update_id: int = 1,
 ) -> Update:
     return Update(
@@ -137,7 +149,7 @@ def message_update(
         message=Message(
             message_id=update_id,
             date=datetime.now(UTC),
-            chat=Chat(id=chat_id, type="group"),
+            chat=Chat(id=chat_id, type=chat_type),
             from_user=User(id=user_id, is_bot=False, first_name="Ведущий"),
             text=text,
         ),

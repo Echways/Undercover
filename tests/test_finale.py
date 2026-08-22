@@ -1,0 +1,214 @@
+from aiogram.methods import SendPhoto
+
+from discussion_harness import (
+    NAMES,
+    SESSION_ID,
+    Table,
+    all_spoken,
+    finished,
+    log,
+    table,
+    talking,
+    words,
+)
+from fake_bot import CHAT_ID
+from fake_words import WORD, pizza
+from undercover.bot.routers.finale import FinalAction, FinalCB
+from undercover.game.models import GameStatus
+from undercover.texts import Buttons, Discussion, Errors
+from undercover.texts import Setup as SetupTexts
+
+__all__ = ["log", "table", "words"]
+
+
+async def test_the_hunt_still_ends_the_game_after_another_round(table: Table) -> None:
+    await all_spoken(table)
+    await table.press(Buttons.ANOTHER_ROUND)
+
+    await table.press(Buttons.SHOW_SPIES)
+
+    assert table.games.stored.status is GameStatus.FINISHED
+
+
+async def test_the_next_game_counts_rounds_from_the_first(table: Table) -> None:
+    await all_spoken(table)
+    await table.press(Buttons.ANOTHER_ROUND)
+    await table.press(Buttons.SHOW_SPIES)
+
+    await table.press(Buttons.PLAY_AGAIN)
+
+    assert table.games.stored.discussion_round == 1
+
+
+async def test_the_final_screen_names_every_spy_and_the_word(table: Table) -> None:
+    await talking(table, names=("Аня", "Борис", "Вера", "Галя", "Дима", "Егор"), spies=(1, 4))
+
+    await table.press(Buttons.SHOW_SPIES)
+
+    assert table.card.caption == Discussion.FINAL_CAPTION.format(
+        title=Discussion.SPY_TITLE_MANY, spies="Борис, Дима", word=WORD
+    )
+
+
+async def test_the_finished_game_waits_for_the_next_decision(table: Table) -> None:
+    state = await finished(table)
+
+    assert state.status is GameStatus.FINISHED
+    assert await table.games.load(SESSION_ID) is not None
+
+
+async def test_the_finished_game_goes_to_the_journal(table: Table) -> None:
+    state = await finished(table, spies=(1, 2))
+
+    (recorded,) = table.log.states
+    assert recorded.session_id == state.session_id
+    assert recorded.status is GameStatus.FINISHED
+    assert [player.is_spy for player in recorded.players] == [False, True, True, False]
+
+
+async def test_a_broken_journal_does_not_break_the_final_screen(table: Table) -> None:
+    table.log.failure = RuntimeError("нет связи с базой")
+
+    await talking(table)
+    await table.press(Buttons.SHOW_SPIES)
+
+    assert table.card.texts == (Buttons.PLAY_AGAIN, Buttons.NEW_GAME)
+    assert table.games.stored.status is GameStatus.FINISHED
+    assert table.alerts[-1] is None
+
+
+async def test_discussion_buttons_are_dead_after_the_game_is_over(table: Table) -> None:
+    await talking(table)
+    stale = table.card.callback_data(Buttons.NEXT_SPEAKER)
+    await table.press(Buttons.SHOW_SPIES)
+
+    await table.tap(stale)
+
+    assert table.alerts[-1] == Discussion.WRONG_PHASE
+
+
+async def test_final_buttons_are_dead_while_the_game_is_on(table: Table) -> None:
+    await talking(table)
+
+    await table.tap(FinalCB(action=FinalAction.AGAIN, session_id=SESSION_ID).pack())
+
+    assert table.alerts[-1] == Discussion.GAME_IS_ON
+    assert table.games.stored.status is GameStatus.DISCUSSION
+
+
+async def test_an_unknown_session_is_reported(table: Table) -> None:
+    await table.tap(FinalCB(action=FinalAction.AGAIN, session_id="нет-такой").pack())
+
+    assert table.alerts == [Errors.SESSION_NOT_FOUND]
+    assert not table.cards
+
+
+async def test_play_again_keeps_the_roster_and_deals_a_fresh_game(table: Table) -> None:
+    old = await finished(table)
+
+    await table.press(Buttons.PLAY_AGAIN)
+
+    fresh = table.games.stored
+    assert fresh.session_id != old.session_id, "это новая партия, а не продолжение старой"
+    assert [player.name for player in fresh.players] == list(NAMES)
+    assert [player.order_index for player in fresh.players] == list(range(len(NAMES)))
+    assert sum(player.is_spy for player in fresh.players) == 1
+    assert not any(player.has_viewed for player in fresh.players)
+    assert fresh.status is GameStatus.REVEAL
+    assert fresh.reveal_cursor == 0
+    assert fresh.discussion_order == []
+
+
+async def test_play_again_keeps_the_chosen_categories(table: Table) -> None:
+    await finished(table, category_ids=[2, 5])
+
+    await table.press(Buttons.PLAY_AGAIN)
+
+    assert table.games.stored.category_ids == [2, 5]
+    assert table.words.asked_categories[-1] in (2, 5)
+
+
+async def test_play_again_without_words_in_the_chosen_categories_is_explained(
+    table: Table,
+) -> None:
+    old = await finished(table, category_ids=[2])
+    table.words.empty_categories = frozenset({2})
+
+    await table.press(Buttons.PLAY_AGAIN)
+
+    assert table.alerts[-1] == Errors.EMPTY_CATEGORIES
+    assert table.games.stored.session_id == old.session_id
+
+
+async def test_play_again_forgets_the_finished_game(table: Table) -> None:
+    old = await finished(table)
+
+    await table.press(Buttons.PLAY_AGAIN)
+
+    active = await table.games.load_active(CHAT_ID)
+
+    assert await table.games.load(old.session_id) is None
+    assert active is not None
+    assert active.session_id == table.games.stored.session_id
+
+
+async def test_play_again_reuses_the_cached_hidden_cards(table: Table) -> None:
+    await talking(table)
+    cached = table.games.stored
+    for player in cached.players:
+        player.card_file_id = f"cached-{player.order_index}"
+    await table.games.save(cached)
+    await table.press(Buttons.SHOW_SPIES)
+
+    await table.press(Buttons.PLAY_AGAIN)
+
+    assert table.card.photo == "cached-0"
+    assert [player.card_file_id for player in table.games.stored.players] == [
+        f"cached-{index}" for index in range(len(NAMES))
+    ]
+
+
+async def test_play_again_continues_in_the_same_message(table: Table) -> None:
+    await finished(table)
+    sent = len(table.session.calls(SendPhoto))
+
+    await table.press(Buttons.PLAY_AGAIN)
+
+    assert len(table.session.calls(SendPhoto)) == sent, "экран партии остался тем же сообщением"
+
+
+async def test_play_again_without_a_word_keeps_the_finished_game(table: Table) -> None:
+    old = await finished(table)
+    table.words.word = None
+
+    await table.press(Buttons.PLAY_AGAIN)
+
+    assert table.alerts[-1] == Errors.EMPTY_CATALOG
+    assert table.games.stored.session_id == old.session_id
+
+    table.words.word = pizza()
+    await table.press(Buttons.PLAY_AGAIN)
+
+    assert table.games.stored.session_id != old.session_id
+
+
+async def test_new_game_wipes_the_session_and_opens_the_setup(table: Table) -> None:
+    old = await finished(table)
+
+    await table.press(Buttons.NEW_GAME)
+
+    assert await table.games.load(old.session_id) is None
+    assert SetupTexts.ASK_PLAYERS_COUNT in (table.window.text or "")
+
+
+async def test_new_game_asks_for_the_roster_from_scratch(table: Table) -> None:
+    await finished(table)
+    await table.press(Buttons.NEW_GAME)
+
+    await table.send("2")
+    await table.send("1")
+    await table.send("Зина")
+    await table.send("Игорь")
+    await table.click(Buttons.PLAY)
+
+    assert [player.name for player in table.games.stored.players] == ["Зина", "Игорь"]

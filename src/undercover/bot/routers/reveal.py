@@ -10,13 +10,9 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 from undercover.bot.guards import load_game_in_phase
 from undercover.bot.keyboards import single_button
 from undercover.bot.message_utils import as_photo, photo_file_id, show_or_advance_card
+from undercover.bot.role_delivery import render_role_card
 from undercover.game.models import GameSessionState, GameStatus, PlayerState
-from undercover.media.card_renderer import (
-    CARD_SUFFIX,
-    render_civilian_card,
-    render_hidden_card,
-    render_spy_card,
-)
+from undercover.media.card_renderer import CARD_SUFFIX, render_hidden_card
 from undercover.redis.game_state import GameStateRepository
 from undercover.texts import Buttons, Errors, Reveal
 
@@ -67,7 +63,7 @@ def create_reveal_router(start_discussion: PhaseStarter) -> Router:
         caption = (Reveal.LAST_VIEWED_CAPTION if is_last else Reveal.VIEWED_CAPTION).format(
             name=player.name
         )
-        image = await asyncio.to_thread(_render_role_card, player, state)
+        image = await asyncio.to_thread(render_role_card, player, state)
 
         message = await show_or_advance_card(
             bot,
@@ -170,12 +166,6 @@ async def _current_turn(
         return None
 
     return state, state.players[state.reveal_cursor]
-
-
-def _render_role_card(player: PlayerState, state: GameSessionState) -> bytes:
-    if player.is_spy:
-        return render_spy_card(player.name, state.hint_by_spy[player.order_index])
-    return render_civilian_card(player.name, state.word_text)
 
 
 def _card_filename(order_index: int) -> str:

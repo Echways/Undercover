@@ -1,9 +1,7 @@
 import logging
-from collections.abc import Callable, Sequence
-from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from operator import itemgetter
-from typing import Any, Final, Protocol, TypedDict, cast
+from typing import Any, Final, TypedDict, cast
 
 from aiogram import Bot
 from aiogram.fsm.state import State, StatesGroup
@@ -27,9 +25,9 @@ from undercover.game.engine import (
     MAX_NAME_LENGTH,
     MAX_PLAYERS,
     MIN_PLAYERS,
+    CatalogFactory,
     EmptyWordCatalogError,
     GameRulesError,
-    WordsSource,
     create_session,
     max_spies_count,
 )
@@ -39,22 +37,6 @@ from undercover.texts import Setup as SetupTexts
 from undercover.utils.secure_random import secure_rng
 
 logger = logging.getLogger(__name__)
-
-
-class CategoryRecord(Protocol):
-    @property
-    def id(self) -> int: ...
-
-    @property
-    def title(self) -> str: ...
-
-
-class Catalog(WordsSource, Protocol):
-    async def list_playable_categories(self) -> Sequence[CategoryRecord]: ...
-
-
-CatalogFactory = Callable[[], AbstractAsyncContextManager[Catalog]]
-WordsSourceFactory = Callable[[], AbstractAsyncContextManager[WordsSource]]
 
 
 class CategoryItem(TypedDict):

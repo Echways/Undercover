@@ -9,6 +9,11 @@ class Role(StrEnum):
     SPY = "spy"
 
 
+class GameMode(StrEnum):
+    HOT_SEAT = "hot_seat"
+    GROUP = "group"
+
+
 class PlayerState(BaseModel):
     order_index: int = Field(ge=0)
 
@@ -16,6 +21,7 @@ class PlayerState(BaseModel):
     is_spy: bool
     has_viewed: bool = False
     card_file_id: str | None = None
+    user_id: int | None = None
 
     @property
     def role(self) -> Role:
@@ -41,6 +47,7 @@ class GameSessionState(BaseModel):
     session_id: str
     chat_id: int
     host_user_id: int
+    mode: GameMode = GameMode.HOT_SEAT
     status: GameStatus
     players: list[PlayerState]
 
@@ -63,3 +70,36 @@ class GameSessionState(BaseModel):
     current_message_id: int | None = None
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class LobbyView(StrEnum):
+    ROSTER = "roster"
+    CATEGORIES = "categories"
+
+
+class LobbyPlayer(BaseModel):
+    user_id: int
+    name: str
+
+
+class LobbyState(BaseModel):
+    chat_id: int
+    host_user_id: int
+
+    message_id: int | None = None
+
+    players: list[LobbyPlayer] = Field(default_factory=list)
+
+    spies_count: int = Field(default=1, ge=1)
+
+    category_ids: list[int] = Field(default_factory=list)
+
+    view: LobbyView = LobbyView.ROSTER
+
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    def index_of(self, user_id: int) -> int | None:
+        return next(
+            (index for index, player in enumerate(self.players) if player.user_id == user_id),
+            None,
+        )

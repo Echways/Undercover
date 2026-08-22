@@ -6,6 +6,7 @@ from aiogram.dispatcher.event.telegram import TelegramEventObserver
 from aiogram.fsm.storage.base import DefaultKeyBuilder
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.methods import SetMyCommands
+from aiogram.types import BotCommandScopeAllGroupChats
 
 from conftest import settings_for
 from fake_bot import FakeSession, make_bot
@@ -17,7 +18,15 @@ from undercover.bot.dispatcher import (
 from undercover.bot.middlewares.throttling import ThrottlingMiddleware
 from undercover.di import AppDependencies, build_dependencies
 
-EXPECTED_ROUTERS: Final = ("start", "Setup", "reveal", "discussion", "errors")
+EXPECTED_ROUTERS: Final = (
+    "start",
+    "lobby",
+    "Setup",
+    "reveal",
+    "discussion",
+    "finale",
+    "errors",
+)
 
 
 @pytest.fixture
@@ -98,6 +107,34 @@ async def test_the_command_menu_is_published_on_startup(dispatcher: Dispatcher) 
 
     published = session.calls(SetMyCommands)
     assert [command.command for command in published[0].commands] == ["start"]
+
+
+async def test_group_chats_see_the_game_command_in_the_menu(dispatcher: Dispatcher) -> None:
+    session = FakeSession()
+
+    await dispatcher.emit_startup(bot=make_bot(session))
+
+    group_menus = [
+        call
+        for call in session.calls(SetMyCommands)
+        if isinstance(call.scope, BotCommandScopeAllGroupChats)
+    ]
+    assert [[command.command for command in call.commands] for call in group_menus] == [
+        ["start", "game"]
+    ]
+
+
+async def test_private_chats_are_not_offered_a_group_only_command(
+    dispatcher: Dispatcher,
+) -> None:
+    session = FakeSession()
+
+    await dispatcher.emit_startup(bot=make_bot(session))
+
+    default_menus = [call for call in session.calls(SetMyCommands) if call.scope is None]
+    assert all(
+        "game" not in [command.command for command in call.commands] for call in default_menus
+    )
 
 
 async def test_a_telegram_outage_does_not_stop_the_start(

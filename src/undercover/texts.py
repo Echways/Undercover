@@ -8,14 +8,18 @@ BRAND: Final = "Undercover"
 
 class Start:
     GREETING: Final = (
-        f"{BRAND} — игра в шпиона на одном телефоне.\n\n"
+        f"{BRAND} — игра в шпиона.\n\n"
         "Все за столом получают одно и то же слово. Все, кроме шпиона, — ему "
         "достаётся лишь подсказка. Дальше по кругу: одна ассоциация от каждого, "
         "и вы ищете того, кто выкручивается.\n\n"
-        "Телефон передаётся из рук в руки, карточки открывает ведущий.\n\n"
+        "Здесь партия идёт с одного телефона: он передаётся из рук в руки, "
+        "карточки открывает ведущий.\n\n"
+        "Играете не за одним столом? Добавьте бота в группу и отправьте там "
+        "/game — слово придёт каждому в личку.\n\n"
         "Соберём состав."
     )
     COMMAND_DESCRIPTION: Final = "Новая партия"
+    GAME_COMMAND_DESCRIPTION: Final = "Партия в группе"
 
 
 class Setup:
@@ -73,6 +77,33 @@ class Setup:
     BROKEN_DRAFT: Final = "Настройки партии потерялись. Соберём состав заново."
 
 
+class Lobby:
+    TITLE: Final = f"{BRAND} — набор в партию."
+    ROSTER: Final = "В игре ({count} из {limit}):\n{names_list}"
+    EMPTY_ROSTER: Final = "Пока никого."
+    SUMMARY: Final = (
+        "Игроков: {players_count}, из них шпионов: {spies_count}.\nСлова: {chosen_categories}."
+    )
+    CALL: Final = "Жмите «Я в игре» — слово придёт в личку."
+
+    PICK_CATEGORIES: Final = (
+        "Откуда брать слово?\n\nОтметьте категории — можно несколько. Без отметок "
+        "сыграем по всему словарю."
+    )
+    CATEGORY_CHOSEN: Final = "• {title}"
+    CATEGORY_FREE: Final = "{title}"
+
+    ALREADY_IN: Final = "Вы уже в составе."
+    NOT_IN: Final = "Вас нет в составе."
+    DM_WELCOME: Final = "Вы в составе. Слово придёт сюда, как только ведущий начнёт партию."
+    STARTED: Final = "Партия началась. Роли ушли в личку."
+    DELIVERY_FAILED: Final = "Роли дошли не всем — партия не началась."
+    OPEN_DM: Final = (
+        "Не получилось написать в личку: {names}.\nОткройте бота, нажмите «Старт» — "
+        "и возвращайтесь в состав."
+    )
+
+
 class Reveal:
     TURN_CAPTION: Final = "Ход {position} из {total}. Передайте телефон: {name}"
     VIEWED_CAPTION: Final = "{name}: карточка открыта. Запомните её и передайте телефон дальше."
@@ -81,6 +112,10 @@ class Reveal:
     WRONG_PHASE: Final = "Раздача карточек уже закончена."
     ALREADY_VIEWED: Final = "Эта карточка уже открыта."
     NOT_VIEWED_YET: Final = "Сначала откройте карточку."
+
+
+class Delivery:
+    ROLE_CAPTION: Final = "Ваша карточка. Запомните её и возвращайтесь в группу."
 
 
 class Discussion:
@@ -99,7 +134,10 @@ class Discussion:
 
 class Errors:
     SESSION_NOT_FOUND: Final = "Партия не найдена — похоже, она уже закончилась."
-    NOT_HOST: Final = "Партия идёт с телефона ведущего — кнопки нажимает только он."
+    NOT_HOST: Final = "Сейчас эта кнопка не ваша — её нажимает ведущий."
+    LOBBY_CLOSED: Final = "Это лобби уже закрыто. Отправьте /game, чтобы собрать новое."
+    GAME_IN_CHAT: Final = "В этом чате уже идёт партия — сначала доиграйте её."
+    GROUP_ONLY: Final = "Так играют в группе: добавьте бота туда и отправьте /game."
     STALE_TURN: Final = "Сейчас очередь другого игрока — смотрите на экран партии."
     BROKEN_SESSION: Final = "Партия повреждена. Начните новую."
     EMPTY_CATALOG: Final = (
@@ -122,6 +160,10 @@ class Buttons:
     CHANGE_CATEGORIES: Final = "Категории"
     PLAY: Final = "Начать партию"
     RESTART: Final = "Собрать заново"
+
+    JOIN_LOBBY: Final = "Я в игре"
+    LEAVE_LOBBY: Final = "Выйти из состава"
+    SPIES_COUNT: Final = "Шпионов: {count}"
 
     SHOW_CARD: Final = "Посмотреть карточку"
     NEXT_PLAYER: Final = "Дальше"
