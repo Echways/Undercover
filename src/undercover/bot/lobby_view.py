@@ -25,6 +25,7 @@ class LobbyAction(StrEnum):
     JOIN = "join"
     LEAVE = "leave"
     SPIES = "spies"
+    TURN = "turn"
     CATEGORIES = "cats"
     CATEGORY = "cat"
     DONE = "done"
@@ -101,7 +102,8 @@ def _roster_keyboard(
     lobby: LobbyState, categories: Sequence[CategoryRecord]
 ) -> InlineKeyboardMarkup:
     settings = [
-        _lobby_button(Buttons.SPIES_COUNT.format(count=lobby.spies_count), LobbyAction.SPIES)
+        _lobby_button(Buttons.SPIES_COUNT.format(count=lobby.spies_count), LobbyAction.SPIES),
+        _lobby_button(_turn_label(lobby.turn_seconds), LobbyAction.TURN),
     ]
     if len(categories) >= MIN_CATEGORIES_TO_CHOOSE:
         settings.append(_lobby_button(Buttons.CHANGE_CATEGORIES, LobbyAction.CATEGORIES))
@@ -137,6 +139,10 @@ def _categories_keyboard(
     ]
     rows.append([_lobby_button(Buttons.CATEGORIES_DONE, LobbyAction.DONE)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _turn_label(seconds: int) -> str:
+    return Buttons.TURN_OFF if seconds <= 0 else Buttons.TURN_LIMIT.format(seconds=seconds)
 
 
 def _lobby_button(text: str, action: LobbyAction, value: int = 0) -> InlineKeyboardButton:

@@ -16,6 +16,7 @@ from undercover.bot.dispatcher import (
     resolve_allowed_updates,
 )
 from undercover.bot.middlewares.throttling import ThrottlingMiddleware
+from undercover.bot.turn_clock import TurnClock
 from undercover.di import AppDependencies, build_dependencies
 
 EXPECTED_ROUTERS: Final = (
@@ -120,7 +121,7 @@ async def test_group_chats_see_the_game_command_in_the_menu(dispatcher: Dispatch
         if isinstance(call.scope, BotCommandScopeAllGroupChats)
     ]
     assert [[command.command for command in call.commands] for call in group_menus] == [
-        ["start", "game"]
+        ["start", "undercover"]
     ]
 
 
@@ -133,7 +134,7 @@ async def test_private_chats_are_not_offered_a_group_only_command(
 
     default_menus = [call for call in session.calls(SetMyCommands) if call.scope is None]
     assert all(
-        "game" not in [command.command for command in call.commands] for call in default_menus
+        "undercover" not in [command.command for command in call.commands] for call in default_menus
     )
 
 
@@ -154,3 +155,11 @@ def test_the_bot_carries_the_configured_token() -> None:
     bot: Bot = create_bot(settings)
 
     assert bot.token == settings.bot_token.get_secret_value()
+
+
+def test_the_turn_clock_stops_with_the_bot(dispatcher: Dispatcher) -> None:
+    owners = [
+        getattr(handler.callback, "__self__", None) for handler in dispatcher.shutdown.handlers
+    ]
+
+    assert any(isinstance(owner, TurnClock) for owner in owners)

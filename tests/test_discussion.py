@@ -1,3 +1,5 @@
+import asyncio
+
 from aiogram.methods import EditMessageCaption, EditMessageMedia, SendPhoto
 
 from discussion_harness import (
@@ -6,6 +8,7 @@ from discussion_harness import (
     SESSION_ID,
     Table,
     all_spoken,
+    finished,
     log,
     make_state,
     spoken_names,
@@ -15,9 +18,10 @@ from discussion_harness import (
 )
 from fake_bot import CHAT_ID, HOST_ID
 from fake_words import WORD, pizza
-from undercover.bot.routers.discussion import TalkAction, TalkCB
+from undercover.bot.routers.discussion import TalkAction, TalkCB, expiry_handler
+from undercover.bot.turn_clock import Turn
 from undercover.game.models import GameMode, GameStatus
-from undercover.texts import Buttons, Discussion, Errors
+from undercover.texts import BAR_EMPTY, Buttons, Discussion, Errors, Timer, countdown_line
 
 __all__ = ["log", "table", "words"]
 
@@ -303,3 +307,110 @@ async def test_a_new_round_freezes_the_last_turn_before_the_counter_moves(table:
     frozen = table.session.calls(EditMessageCaption)[frozen_before]
     assert Discussion.ROUND_PREFIX.format(round=2) not in (frozen.caption or "")
     assert table.games.stored.discussion_round == 2
+
+
+async def test_a_timed_group_turn_shows_the_countdown_from_the_first_frame(table: Table) -> None:
+    state = await talking(table, mode=GameMode.GROUP, turn_seconds=60)
+
+    assert countdown_line(60, 60) in table.card.caption
+    assert state.turn_deadline is not None
+
+
+async def test_a_hot_seat_turn_carries_no_countdown(table: Table) -> None:
+    state = await talking(table)
+
+    assert state.turn_deadline is None
+    assert BAR_EMPTY not in table.card.caption
+
+
+async def test_pressing_next_reports_the_time_the_speaker_took(table: Table) -> None:
+    await talking(table, mode=GameMode.GROUP, turn_seconds=60)
+
+    await table.press(Buttons.NEXT_SPEAKER)
+
+    (frozen,) = table.session.calls(EditMessageCaption)
+    assert Timer.SPENT.format(seconds=0) in (frozen.caption or "")
+
+
+async def test_an_expired_turn_moves_on_by_itself(table: Table) -> None:
+    state = await talking(table, mode=GameMode.GROUP, turn_seconds=60)
+    on_expire = expiry_handler(table.games, table.keeper)
+
+    await on_expire(table.bot, Turn(SESSION_ID, state.discussion_round, state.discussion_cursor))
+
+    assert table.games.stored.discussion_cursor == 1
+    (frozen,) = table.session.calls(EditMessageCaption)
+    assert Timer.EXPIRED in (frozen.caption or "")
+    assert frozen.reply_markup is None
+
+
+async def test_an_expired_last_turn_keeps_the_round_buttons(table: Table) -> None:
+    state = await all_spoken(table, mode=GameMode.GROUP, turn_seconds=60)
+    last = state.discussion_cursor
+    frozen_before = len(table.session.calls(EditMessageCaption))
+    on_expire = expiry_handler(table.games, table.keeper)
+
+    await on_expire(table.bot, Turn(SESSION_ID, state.discussion_round, last))
+
+    frozen = table.session.calls(EditMessageCaption)[frozen_before]
+    assert Timer.EXPIRED in (frozen.caption or "")
+    assert frozen.reply_markup is not None
+    assert Buttons.ANOTHER_ROUND in [
+        item.text for row in frozen.reply_markup.inline_keyboard for item in row
+    ]
+    assert table.games.stored.discussion_cursor == last
+
+
+async def test_a_stale_tick_is_ignored(table: Table) -> None:
+    await talking(table, mode=GameMode.GROUP, turn_seconds=60)
+    await table.press(Buttons.NEXT_SPEAKER)
+    on_expire = expiry_handler(table.games, table.keeper)
+
+    await on_expire(table.bot, Turn(SESSION_ID, round=1, cursor=0))
+
+    assert table.games.stored.discussion_cursor == 1
+
+
+async def test_a_tick_of_a_game_that_is_over_changes_nothing(table: Table) -> None:
+    state = await finished(table, mode=GameMode.GROUP, turn_seconds=60)
+    on_expire = expiry_handler(table.games, table.keeper)
+
+    await on_expire(table.bot, Turn(SESSION_ID, state.discussion_round, state.discussion_cursor))
+
+    assert table.games.stored.status is GameStatus.FINISHED
+
+
+async def test_a_tick_of_a_forgotten_game_changes_nothing(table: Table) -> None:
+    on_expire = expiry_handler(table.games, table.keeper)
+
+    await on_expire(table.bot, Turn("нет-такой", round=1, cursor=0))
+
+    assert table.games.is_empty
+
+
+async def test_a_button_and_an_expiry_racing_move_the_turn_exactly_once(table: Table) -> None:
+    state = await talking(table, mode=GameMode.GROUP, turn_seconds=60)
+    on_expire = expiry_handler(table.games, table.keeper)
+    opened = len(table.session.calls(SendPhoto))
+
+    await asyncio.gather(
+        on_expire(table.bot, Turn(SESSION_ID, state.discussion_round, state.discussion_cursor)),
+        table.press(Buttons.NEXT_SPEAKER),
+    )
+
+    assert len(table.session.calls(SendPhoto)) == opened + 1
+    assert table.games.stored.discussion_cursor == 1
+
+
+async def test_a_tick_on_a_broken_order_opens_no_turn(table: Table) -> None:
+    await table.games.save(
+        make_state(
+            mode=GameMode.GROUP, turn_seconds=60, discussion_order=[0, 99], discussion_cursor=0
+        )
+    )
+    on_expire = expiry_handler(table.games, table.keeper)
+
+    await on_expire(table.bot, Turn(SESSION_ID, round=1, cursor=0))
+
+    assert table.games.stored.discussion_cursor == 0
+    assert not table.cards

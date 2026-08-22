@@ -218,10 +218,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Plan
-docs/spy_bot_plan.md
-
-# Локальный предпросмотр карточек (tools/card_preview.py)
-docs/preview/
+docs/*
 
 # Отчёты, которые собирают те же команды, что и CI
 artifacts/

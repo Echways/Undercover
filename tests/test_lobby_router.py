@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from datetime import timedelta
+from functools import partial
 from typing import Final
 
 import pytest
@@ -12,7 +15,9 @@ from fake_words import FakeWords, catalog, pizza
 from lobby_harness import Group
 from undercover.bot.routers.discussion import start_discussion
 from undercover.bot.routers.lobby import create_lobby_router
+from undercover.bot.turn_clock import TurnClock, TurnKeeper
 from undercover.game.models import (
+    DEFAULT_TURN_SECONDS,
     GameMode,
     GameSessionState,
     GameStatus,
@@ -20,7 +25,9 @@ from undercover.game.models import (
     PlayerState,
 )
 from undercover.texts import Buttons, Errors, Lobby
+from undercover.utils.keyed_locks import KeyedLocks
 
+IDLE_TICK: Final = timedelta(minutes=1)
 GUEST_ID: Final = 555
 OTHER_ID: Final = 666
 
@@ -31,13 +38,17 @@ def words() -> FakeWords:
 
 
 @pytest.fixture
-def group(words: FakeWords) -> Group:
+async def group(words: FakeWords) -> AsyncIterator[Group]:
     session = FakeSession()
     games = FakeGameStateRepository()
     lobbies = FakeLobbyRepository()
+    keeper = TurnKeeper(clock=TurnClock(tick=IDLE_TICK), locks=KeyedLocks())
     dispatcher = Dispatcher(games=games, lobbies=lobbies)
-    dispatcher.include_router(create_lobby_router(words.open, start_discussion))
-    return Group(
+    dispatcher.include_router(
+        create_lobby_router(words.open, partial(start_discussion, keeper=keeper))
+    )
+
+    yield Group(
         dispatcher=dispatcher,
         bot=make_bot(session),
         session=session,
@@ -45,6 +56,8 @@ def group(words: FakeWords) -> Group:
         lobbies=lobbies,
         words=words,
     )
+
+    await keeper.clock.shutdown()
 
 
 def running_game() -> GameSessionState:
@@ -64,7 +77,7 @@ def replies(group: Group) -> list[str | None]:
 
 
 async def test_game_opens_a_lobby_with_the_sender_as_host(group: Group) -> None:
-    await group.command("/game")
+    await group.command("/undercover")
 
     assert group.lobbies.stored.host_user_id == HOST_ID
     assert group.screen.texts[0] == Buttons.JOIN_LOBBY
@@ -73,17 +86,17 @@ async def test_game_opens_a_lobby_with_the_sender_as_host(group: Group) -> None:
 async def test_game_refuses_while_a_game_is_running_in_the_chat(group: Group) -> None:
     await group.games.save(running_game())
 
-    await group.command("/game")
+    await group.command("/undercover")
 
     assert group.lobbies.is_empty
     assert Errors.GAME_IN_CHAT in replies(group)
 
 
 async def test_game_reopens_an_existing_lobby_without_losing_the_roster(group: Group) -> None:
-    await group.command("/game")
+    await group.command("/undercover")
     await group.press(Buttons.JOIN_LOBBY, user_id=GUEST_ID)
 
-    await group.command("/game")
+    await group.command("/undercover")
 
     assert [player.user_id for player in group.lobbies.stored.players] == [GUEST_ID]
 
@@ -91,7 +104,7 @@ async def test_game_reopens_an_existing_lobby_without_losing_the_roster(group: G
 async def test_joining_pings_the_private_chat_and_shows_the_name_in_the_roster(
     group: Group,
 ) -> None:
-    await group.command("/game")
+    await group.command("/undercover")
 
     await group.press(Buttons.JOIN_LOBBY, user_id=GUEST_ID)
 
@@ -102,7 +115,7 @@ async def test_joining_pings_the_private_chat_and_shows_the_name_in_the_roster(
 async def test_a_closed_private_chat_redirects_to_the_deep_link_instead_of_joining(
     group: Group,
 ) -> None:
-    await group.command("/game")
+    await group.command("/undercover")
     group.session.failures[SendMessage] = TelegramForbiddenError(
         method=SendMessage(chat_id=GUEST_ID, text="x"),
         message="bot can't initiate conversation with a user",
@@ -115,7 +128,7 @@ async def test_a_closed_private_chat_redirects_to_the_deep_link_instead_of_joini
 
 
 async def test_joining_twice_is_refused_without_a_second_ping(group: Group) -> None:
-    await group.command("/game")
+    await group.command("/undercover")
     await group.press(Buttons.JOIN_LOBBY, user_id=GUEST_ID)
     pings = len(group.session.calls(SendMessage))
 
@@ -126,7 +139,7 @@ async def test_joining_twice_is_refused_without_a_second_ping(group: Group) -> N
 
 
 async def test_two_players_with_the_same_telegram_name_get_told_apart(group: Group) -> None:
-    await group.command("/game")
+    await group.command("/undercover")
 
     await group.press(Buttons.JOIN_LOBBY, user_id=GUEST_ID)
     await group.press(Buttons.JOIN_LOBBY, user_id=OTHER_ID)
@@ -137,7 +150,7 @@ async def test_two_players_with_the_same_telegram_name_get_told_apart(group: Gro
 
 
 async def test_leaving_removes_the_player(group: Group) -> None:
-    await group.command("/game")
+    await group.command("/undercover")
     await group.press(Buttons.JOIN_LOBBY, user_id=GUEST_ID)
 
     await group.press(Buttons.LEAVE_LOBBY, user_id=GUEST_ID)
@@ -146,7 +159,7 @@ async def test_leaving_removes_the_player(group: Group) -> None:
 
 
 async def test_leaving_when_never_joined_says_so(group: Group) -> None:
-    await group.command("/game")
+    await group.command("/undercover")
 
     await group.press(Buttons.LEAVE_LOBBY, user_id=GUEST_ID)
 
@@ -154,7 +167,7 @@ async def test_leaving_when_never_joined_says_so(group: Group) -> None:
 
 
 async def test_a_button_from_a_closed_lobby_says_it_is_closed(group: Group) -> None:
-    await group.command("/game")
+    await group.command("/undercover")
     data = group.screen.callback_data(Buttons.JOIN_LOBBY)
     await group.lobbies.delete(CHAT_ID)
 
@@ -165,14 +178,14 @@ async def test_a_button_from_a_closed_lobby_says_it_is_closed(group: Group) -> N
 
 async def test_game_in_a_private_chat_points_to_a_group(group: Group) -> None:
     await group.dispatcher.feed_update(
-        group.bot, message_update("/game", chat_id=HOST_ID, chat_type="private")
+        group.bot, message_update("/undercover", chat_id=HOST_ID, chat_type="private")
     )
 
     assert Errors.GROUP_ONLY in replies(group)
 
 
 async def joined(group: Group, *user_ids: int) -> None:
-    await group.command("/game")
+    await group.command("/undercover")
     for user_id in user_ids:
         await group.press(Buttons.JOIN_LOBBY, user_id=user_id)
 
@@ -188,7 +201,7 @@ async def test_the_spies_button_walks_the_allowed_range_and_wraps(group: Group) 
 
 
 async def test_only_the_host_changes_the_settings(group: Group) -> None:
-    await group.command("/game")
+    await group.command("/undercover")
 
     await group.press(Buttons.SPIES_COUNT.format(count=1), user_id=GUEST_ID)
 
@@ -197,7 +210,7 @@ async def test_only_the_host_changes_the_settings(group: Group) -> None:
 
 
 async def test_categories_open_toggle_and_close(group: Group) -> None:
-    await group.command("/game")
+    await group.command("/undercover")
 
     await group.press(Buttons.CHANGE_CATEGORIES)
     opened: LobbyView = group.lobbies.stored.view
@@ -215,7 +228,7 @@ async def test_categories_open_toggle_and_close(group: Group) -> None:
 
 
 async def test_a_category_button_from_a_stranger_changes_nothing(group: Group) -> None:
-    await group.command("/game")
+    await group.command("/undercover")
     await group.press(Buttons.CHANGE_CATEGORIES)
     data = group.screen.callback_data(Lobby.CATEGORY_FREE.format(title="Еда"))
 
@@ -303,3 +316,24 @@ async def test_an_empty_dictionary_stops_the_start_without_losing_the_roster(
 
     assert group.games.is_empty
     assert len(group.lobbies.stored.players) == 2
+
+
+async def test_the_chosen_turn_length_reaches_the_session(group: Group) -> None:
+    await joined(group, GUEST_ID, OTHER_ID)
+
+    await group.press(Buttons.TURN_LIMIT.format(seconds=DEFAULT_TURN_SECONDS))
+    chosen = group.lobbies.stored.turn_seconds
+    assert chosen != DEFAULT_TURN_SECONDS
+
+    await group.press(Buttons.PLAY)
+
+    assert group.games.stored.turn_seconds == chosen
+
+
+async def test_only_the_host_changes_the_turn_length(group: Group) -> None:
+    await group.command("/undercover")
+
+    await group.press(Buttons.TURN_LIMIT.format(seconds=DEFAULT_TURN_SECONDS), user_id=GUEST_ID)
+
+    assert group.lobbies.stored.turn_seconds == DEFAULT_TURN_SECONDS
+    assert Errors.NOT_HOST in group.alerts

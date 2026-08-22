@@ -492,3 +492,16 @@ async def test_a_session_is_hot_seat_and_anonymous_by_default() -> None:
 
     assert state.mode is GameMode.HOT_SEAT
     assert [player.user_id for player in state.players] == [None, None]
+
+
+async def test_the_turn_length_reaches_the_session() -> None:
+    state = await make_session(players_count=2, turn_seconds=45)
+
+    assert state.turn_seconds == 45
+    assert state.turn_deadline is None
+
+
+async def test_a_session_runs_without_a_timer_unless_asked() -> None:
+    state = await make_session(players_count=2)
+
+    assert state.turn_seconds == 0

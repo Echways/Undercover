@@ -1,5 +1,8 @@
 import re
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import timedelta
+from functools import partial
 from typing import Any, Final
 
 import pytest
@@ -18,10 +21,13 @@ from undercover.bot.routers.discussion import create_discussion_router, start_di
 from undercover.bot.routers.finale import create_finale_router
 from undercover.bot.routers.reveal import create_reveal_router, start_reveal
 from undercover.bot.routers.setup_dialog import Setup, create_setup_dialog
+from undercover.bot.turn_clock import TurnClock, TurnKeeper
 from undercover.game.models import GameSessionState, GameStatus, PlayerState
 from undercover.texts import Buttons
+from undercover.utils.keyed_locks import KeyedLocks
 
 SESSION_ID: Final = "11111111-1111-1111-1111-111111111111"
+IDLE_TICK: Final = timedelta(minutes=1)
 NAMES: Final = ("Аня", "Борис", "Вера", "Галя")
 SPY_INDEX: Final = 1
 HINT: Final = "её режут на куски"
@@ -126,6 +132,7 @@ class Table:
     games: FakeGameStateRepository
     words: FakeWords
     log: RecordingLog
+    keeper: TurnKeeper
 
     async def send(self, text: str) -> None:
         await self.client.send(text)
@@ -177,20 +184,22 @@ def log() -> RecordingLog:
 
 
 @pytest.fixture
-async def table(words: FakeWords, log: RecordingLog) -> Table:
+async def table(words: FakeWords, log: RecordingLog) -> AsyncIterator[Table]:
     session = FakeSession()
     bot = make_bot(session)
     games = FakeGameStateRepository()
+    keeper = TurnKeeper(clock=TurnClock(tick=IDLE_TICK), locks=KeyedLocks())
+    begin_discussion = partial(start_discussion, keeper=keeper)
     dispatcher = Dispatcher(storage=JsonMemoryStorage(), games=games)
     dispatcher.include_router(start_router())
     dispatcher.include_router(create_setup_dialog(words.open, start_reveal))
-    dispatcher.include_router(create_reveal_router(start_discussion))
-    dispatcher.include_router(create_discussion_router())
-    dispatcher.include_router(create_finale_router(words.open, log))
+    dispatcher.include_router(create_reveal_router(begin_discussion))
+    dispatcher.include_router(create_discussion_router(keeper))
+    dispatcher.include_router(create_finale_router(words.open, log, keeper, begin_discussion))
     messages = MockMessageManager()
     setup_dialogs(dispatcher, message_manager=messages)
 
-    return Table(
+    yield Table(
         client=BotClient(dispatcher, user_id=HOST_ID, chat_id=CHAT_ID, chat_type="group", bot=bot),
         dispatcher=dispatcher,
         bot=bot,
@@ -199,13 +208,16 @@ async def table(words: FakeWords, log: RecordingLog) -> Table:
         games=games,
         words=words,
         log=log,
+        keeper=keeper,
     )
+
+    await keeper.clock.shutdown()
 
 
 async def talking(table: Table, **overrides: Any) -> GameSessionState:
     state = make_state(**overrides)
     await table.games.save(state)
-    await start_discussion(table.bot, table.games, state)
+    await start_discussion(table.bot, table.games, state, table.keeper)
     return table.games.stored
 
 

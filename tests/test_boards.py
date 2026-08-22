@@ -97,3 +97,14 @@ async def test_a_deleted_turn_message_does_not_break_the_game() -> None:
     )
 
     await FeedBoard().close_turn(make_bot(session), make_state(GameMode.GROUP), "Говорит: Аня")
+
+
+async def test_a_frozen_turn_can_keep_its_buttons_when_the_round_is_over() -> None:
+    session = FakeSession()
+
+    await FeedBoard().close_turn(
+        make_bot(session), make_state(GameMode.GROUP), "Говорит: Аня", KEYBOARD
+    )
+
+    (frozen,) = session.calls(EditMessageCaption)
+    assert frozen.reply_markup == KEYBOARD

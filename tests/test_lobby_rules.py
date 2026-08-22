@@ -9,20 +9,21 @@ from undercover.game.engine import (
 )
 from undercover.game.lobby import (
     cycle_spies_count,
+    cycle_turn_seconds,
     ensure_playable,
     join,
     leave,
     toggle_category,
     unique_name,
 )
-from undercover.game.models import LobbyPlayer, LobbyState
+from undercover.game.models import DEFAULT_TURN_SECONDS, TURN_CHOICES, LobbyPlayer, LobbyState
 
 CHAT_ID = -1001234567890
 HOST_ID = 777
 
 
-def lobby(players: int = 0) -> LobbyState:
-    state = LobbyState(chat_id=CHAT_ID, host_user_id=HOST_ID)
+def lobby(players: int = 0, **overrides: object) -> LobbyState:
+    state = LobbyState.model_validate({"chat_id": CHAT_ID, "host_user_id": HOST_ID} | overrides)
     for number in range(players):
         join(state, LobbyPlayer(user_id=HOST_ID + number, name=f"Игрок-{number}"))
     return state
@@ -137,3 +138,26 @@ def test_unique_name_keeps_the_result_short_enough_for_a_card() -> None:
 
 def test_unique_name_trims_an_overlong_name_even_without_a_collision() -> None:
     assert len(unique_name("Ы" * 100, taken=[])) == MAX_NAME_LENGTH
+
+
+def test_a_new_lobby_starts_at_the_default_turn_length() -> None:
+    assert lobby().turn_seconds == DEFAULT_TURN_SECONDS
+
+
+def test_the_turn_length_walks_every_choice_and_comes_back() -> None:
+    state = lobby()
+    seen = []
+    for _ in range(len(TURN_CHOICES)):
+        cycle_turn_seconds(state)
+        seen.append(state.turn_seconds)
+
+    assert sorted(seen) == sorted(TURN_CHOICES)
+    assert state.turn_seconds == DEFAULT_TURN_SECONDS
+
+
+def test_an_unknown_turn_length_falls_back_to_the_first_choice() -> None:
+    state = lobby(turn_seconds=999)
+
+    cycle_turn_seconds(state)
+
+    assert state.turn_seconds == TURN_CHOICES[0]

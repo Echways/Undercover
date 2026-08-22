@@ -11,19 +11,21 @@ from aiogram_dialog import DialogManager, StartMode
 from undercover.bot.guards import load_discussion, load_finished
 from undercover.bot.keyboards import button
 from undercover.bot.message_utils import as_photo, show_or_advance_card
+from undercover.bot.role_delivery import deliver_roles
 from undercover.bot.routers.discussion import TalkAction, TalkCB, report_broken
-from undercover.bot.routers.reveal import start_reveal
+from undercover.bot.routers.reveal import PhaseStarter, start_reveal
 from undercover.bot.routers.setup_dialog import Setup
+from undercover.bot.turn_clock import TurnKeeper
 from undercover.game.engine import (
     EmptyWordCatalogError,
     GameRulesError,
     WordsSourceFactory,
     create_session,
 )
-from undercover.game.models import GameSessionState, GameStatus
+from undercover.game.models import GameMode, GameSessionState, GameStatus
 from undercover.media.card_renderer import CARD_SUFFIX, render_result_card
 from undercover.redis.game_state import GameStateRepository
-from undercover.texts import Buttons, Discussion, Errors, empty_catalog_text
+from undercover.texts import Buttons, Discussion, Errors, Lobby, empty_catalog_text
 from undercover.utils.secure_random import secure_rng
 
 logger = logging.getLogger(__name__)
@@ -41,7 +43,12 @@ class FinalCB(CallbackData, prefix="final"):
     session_id: str
 
 
-def create_finale_router(open_words: WordsSourceFactory, log_game: GameLogWriter) -> Router:
+def create_finale_router(
+    open_words: WordsSourceFactory,
+    log_game: GameLogWriter,
+    keeper: TurnKeeper,
+    start_discussion: PhaseStarter,
+) -> Router:
     router = Router(name="finale")
 
     @router.callback_query(TalkCB.filter(F.action == TalkAction.SPIES))
@@ -51,34 +58,38 @@ def create_finale_router(open_words: WordsSourceFactory, log_game: GameLogWriter
         games: GameStateRepository,
         bot: Bot,
     ) -> None:
-        state = await load_discussion(callback, callback_data.session_id, games)
-        if state is None:
-            return
+        async with keeper.locks.held(callback_data.session_id):
+            state = await load_discussion(callback, callback_data.session_id, games)
+            if state is None:
+                return
+            keeper.clock.stop(state.session_id)
 
-        spies = [player.name for player in state.players if player.is_spy]
-        if not spies:
-            await report_broken(callback, state, "в партии нет ни одного шпиона")
-            return
+            spies = [player.name for player in state.players if player.is_spy]
+            if not spies:
+                await report_broken(callback, state, "в партии нет ни одного шпиона")
+                return
 
-        image = await asyncio.to_thread(render_result_card, spies, state.word_text)
-        message = await show_or_advance_card(
-            bot,
-            state.chat_id,
-            state.current_message_id,
-            as_photo(image, f"result.{CARD_SUFFIX}"),
-            Discussion.FINAL_CAPTION.format(
-                title=(Discussion.SPY_TITLE_MANY if len(spies) > 1 else Discussion.SPY_TITLE_ONE),
-                spies=", ".join(spies),
-                word=state.word_text,
-            ),
-            _final_keyboard(state),
-        )
+            image = await asyncio.to_thread(render_result_card, spies, state.word_text)
+            message = await show_or_advance_card(
+                bot,
+                state.chat_id,
+                state.current_message_id,
+                as_photo(image, f"result.{CARD_SUFFIX}"),
+                Discussion.FINAL_CAPTION.format(
+                    title=(
+                        Discussion.SPY_TITLE_MANY if len(spies) > 1 else Discussion.SPY_TITLE_ONE
+                    ),
+                    spies=", ".join(spies),
+                    word=state.word_text,
+                ),
+                _final_keyboard(state),
+            )
 
-        state.status = GameStatus.FINISHED
-        state.current_message_id = message.message_id
-        await games.save(state)
-        await _write_log(log_game, state)
-        await callback.answer()
+            state.status = GameStatus.FINISHED
+            state.current_message_id = message.message_id
+            await games.save(state)
+            await _write_log(log_game, state)
+            await callback.answer()
 
     @router.callback_query(FinalCB.filter(F.action == FinalAction.AGAIN))
     async def cb_play_again(
@@ -90,6 +101,7 @@ def create_finale_router(open_words: WordsSourceFactory, log_game: GameLogWriter
         state = await load_finished(callback, callback_data.session_id, games)
         if state is None:
             return
+        keeper.clock.stop(state.session_id)
 
         try:
             async with open_words() as words:
@@ -97,10 +109,13 @@ def create_finale_router(open_words: WordsSourceFactory, log_game: GameLogWriter
                     chat_id=state.chat_id,
                     host_user_id=state.host_user_id,
                     player_names=[player.name for player in state.players],
+                    player_ids=_telegram_ids(state),
                     spies_count=sum(player.is_spy for player in state.players),
                     words=words,
                     rng=secure_rng(),
                     category_ids=state.category_ids,
+                    mode=state.mode,
+                    turn_seconds=state.turn_seconds,
                 )
         except EmptyWordCatalogError:
             logger.exception("партия %s: следующую не собрать, словарь пуст", state.session_id)
@@ -111,14 +126,17 @@ def create_finale_router(open_words: WordsSourceFactory, log_game: GameLogWriter
             await callback.answer(Errors.BROKEN_SESSION, show_alert=True)
             return
 
-        fresh.current_message_id = state.current_message_id
-        for player, previous in zip(fresh.players, state.players, strict=True):
-            player.card_file_id = previous.card_file_id
+        if fresh.mode is GameMode.GROUP:
+            if await deliver_roles(bot, fresh):
+                await callback.answer(Lobby.DELIVERY_FAILED, show_alert=True)
+                return
+            await _replace(games, state, fresh)
+            await start_discussion(bot, games, fresh)
+        else:
+            _carry_over_cards(state, fresh)
+            await _replace(games, state, fresh)
+            await start_reveal(bot, games, fresh)
 
-        await games.save(fresh)
-
-        await games.delete(state.session_id)
-        await start_reveal(bot, games, fresh)
         await callback.answer()
 
     @router.callback_query(FinalCB.filter(F.action == FinalAction.NEW))
@@ -132,6 +150,7 @@ def create_finale_router(open_words: WordsSourceFactory, log_game: GameLogWriter
         if state is None:
             return
 
+        keeper.clock.stop(state.session_id)
         await games.delete(state.session_id)
         await dialog_manager.start(Setup.ask_players_count, mode=StartMode.RESET_STACK)
         await callback.answer()
@@ -144,6 +163,24 @@ async def _write_log(log_game: GameLogWriter, state: GameSessionState) -> None:
         await log_game(state)
     except Exception:
         logger.exception("партия %s: не записалась в журнал", state.session_id)
+
+
+async def _replace(
+    games: GameStateRepository, previous: GameSessionState, fresh: GameSessionState
+) -> None:
+    await games.save(fresh)
+    await games.delete(previous.session_id)
+
+
+def _carry_over_cards(previous: GameSessionState, fresh: GameSessionState) -> None:
+    fresh.current_message_id = previous.current_message_id
+    for player, dealt_before in zip(fresh.players, previous.players, strict=True):
+        player.card_file_id = dealt_before.card_file_id
+
+
+def _telegram_ids(state: GameSessionState) -> list[int] | None:
+    known = [player.user_id for player in state.players if player.user_id is not None]
+    return known if len(known) == len(state.players) else None
 
 
 def _final_keyboard(state: GameSessionState) -> InlineKeyboardMarkup:

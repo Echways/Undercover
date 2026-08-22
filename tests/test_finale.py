@@ -1,3 +1,4 @@
+from aiogram.exceptions import TelegramForbiddenError
 from aiogram.methods import SendPhoto
 
 from discussion_harness import (
@@ -14,8 +15,8 @@ from discussion_harness import (
 from fake_bot import CHAT_ID
 from fake_words import WORD, pizza
 from undercover.bot.routers.finale import FinalAction, FinalCB
-from undercover.game.models import GameStatus
-from undercover.texts import Buttons, Discussion, Errors
+from undercover.game.models import GameMode, GameStatus
+from undercover.texts import Buttons, Discussion, Errors, Lobby
 from undercover.texts import Setup as SetupTexts
 
 __all__ = ["log", "table", "words"]
@@ -212,3 +213,52 @@ async def test_new_game_asks_for_the_roster_from_scratch(table: Table) -> None:
     await table.click(Buttons.PLAY)
 
     assert [player.name for player in table.games.stored.players] == ["Зина", "Игорь"]
+
+
+async def test_the_final_screen_silences_the_clock(table: Table) -> None:
+    await talking(table, mode=GameMode.GROUP, turn_seconds=60)
+    assert table.keeper.clock.running
+
+    await table.press(Buttons.SHOW_SPIES)
+
+    assert table.keeper.clock.running == frozenset()
+
+
+async def test_a_new_roster_silences_the_clock(table: Table) -> None:
+    await finished(table, mode=GameMode.GROUP, turn_seconds=60)
+
+    await table.press(Buttons.NEW_GAME)
+
+    assert table.keeper.clock.running == frozenset()
+
+
+async def test_another_group_game_deals_roles_in_private_and_opens_the_first_turn(
+    table: Table,
+) -> None:
+    old = await finished(table, mode=GameMode.GROUP, ids=(10, 20, 30, 40), turn_seconds=60)
+    sent_before = len(table.session.calls(SendPhoto))
+
+    await table.press(Buttons.PLAY_AGAIN)
+
+    fresh = table.games.stored
+    assert fresh.session_id != old.session_id
+    assert fresh.mode is GameMode.GROUP
+    assert fresh.turn_seconds == 60
+    assert fresh.status is GameStatus.DISCUSSION
+    assert [player.user_id for player in fresh.players] == [10, 20, 30, 40]
+
+    dealt = [call.chat_id for call in table.session.calls(SendPhoto)[sent_before:]]
+    assert sorted(dealt[:-1]) == [10, 20, 30, 40]
+    assert dealt[-1] == CHAT_ID
+
+
+async def test_an_undelivered_role_keeps_the_finished_group_game(table: Table) -> None:
+    old = await finished(table, mode=GameMode.GROUP, ids=(10, 20, 30, 40), turn_seconds=60)
+    table.session.failures[SendPhoto] = TelegramForbiddenError(
+        method=SendPhoto(chat_id=10, photo="x"), message="bot was blocked by the user"
+    )
+
+    await table.press(Buttons.PLAY_AGAIN)
+
+    assert table.games.stored.session_id == old.session_id
+    assert table.alerts[-1] == Lobby.DELIVERY_FAILED

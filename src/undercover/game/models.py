@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Final
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -69,7 +70,16 @@ class GameSessionState(BaseModel):
 
     current_message_id: int | None = None
 
+    turn_seconds: int = Field(default=0, ge=0)
+
+    turn_deadline: datetime | None = None
+
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+DEFAULT_TURN_SECONDS: Final = 45
+
+TURN_CHOICES: Final = (30, 45, 60, 0)
 
 
 class LobbyView(StrEnum):
@@ -93,6 +103,8 @@ class LobbyState(BaseModel):
     spies_count: int = Field(default=1, ge=1)
 
     category_ids: list[int] = Field(default_factory=list)
+
+    turn_seconds: int = Field(default=DEFAULT_TURN_SECONDS, ge=0)
 
     view: LobbyView = LobbyView.ROSTER
 

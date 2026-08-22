@@ -159,6 +159,7 @@ async def create_session(
     category_ids: Sequence[int] | None = None,
     player_ids: Sequence[int] | None = None,
     mode: GameMode = GameMode.HOT_SEAT,
+    turn_seconds: int = 0,
 ) -> GameSessionState:
     players = assign_roles(player_names, spies_count, rng, player_ids)
     word = await pick_word(words, category_ids, rng)
@@ -167,6 +168,7 @@ async def create_session(
         chat_id=chat_id,
         host_user_id=host_user_id,
         mode=mode,
+        turn_seconds=turn_seconds,
         status=GameStatus.SETUP,
         players=players,
         word_id=word.word_id,

@@ -3,7 +3,7 @@ from typing import Final
 from fake_words import catalog
 from undercover.bot.lobby_view import LobbyAction, LobbyCB, lobby_keyboard, lobby_text
 from undercover.game.engine import MAX_PLAYERS
-from undercover.game.models import LobbyPlayer, LobbyState, LobbyView
+from undercover.game.models import DEFAULT_TURN_SECONDS, LobbyPlayer, LobbyState, LobbyView
 from undercover.texts import Buttons, Lobby
 
 CHAT_ID: Final = -1001234567890
@@ -53,6 +53,7 @@ def test_the_roster_keyboard_carries_join_leave_settings_and_start() -> None:
         Buttons.JOIN_LOBBY,
         Buttons.LEAVE_LOBBY,
         Buttons.SPIES_COUNT.format(count=1),
+        Buttons.TURN_LIMIT.format(seconds=DEFAULT_TURN_SECONDS),
         Buttons.CHANGE_CATEGORIES,
         Buttons.PLAY,
     ]
@@ -84,3 +85,11 @@ def test_callback_data_fits_the_telegram_limit() -> None:
     packed = LobbyCB(action=LobbyAction.CATEGORY, value=999999).pack()
 
     assert len(packed.encode()) <= 64
+
+
+def test_the_turn_button_shows_the_current_length() -> None:
+    assert Buttons.TURN_LIMIT.format(seconds=DEFAULT_TURN_SECONDS) in texts_of(lobby(2))
+
+
+def test_the_turn_button_says_plainly_when_the_timer_is_off() -> None:
+    assert Buttons.TURN_OFF in texts_of(lobby(2, turn_seconds=0))

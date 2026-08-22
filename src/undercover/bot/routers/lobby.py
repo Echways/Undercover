@@ -20,6 +20,7 @@ from undercover.game.engine import (
 )
 from undercover.game.lobby import (
     cycle_spies_count,
+    cycle_turn_seconds,
     ensure_playable,
     join,
     leave,
@@ -29,7 +30,7 @@ from undercover.game.lobby import (
 from undercover.game.models import GameMode, LobbyPlayer, LobbyState, LobbyView
 from undercover.redis.game_state import GameStateRepository
 from undercover.redis.lobby_state import LobbyRepository
-from undercover.texts import Errors, Lobby, empty_catalog_text
+from undercover.texts import GAME_COMMAND, Errors, Lobby, empty_catalog_text
 from undercover.utils.secure_random import secure_rng
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,7 @@ def create_lobby_router(open_catalog: CatalogFactory, start_discussion: PhaseSta
     async def redraw(bot: Bot, lobbies: LobbyRepository, lobby: LobbyState) -> None:
         await render_lobby(bot, lobbies, lobby, await _categories(open_catalog))
 
-    @router.message(Command("game"), F.chat.type.in_(GROUP_CHATS))
+    @router.message(Command(GAME_COMMAND), F.chat.type.in_(GROUP_CHATS))
     async def cmd_game(
         message: Message, bot: Bot, games: GameStateRepository, lobbies: LobbyRepository
     ) -> None:
@@ -59,7 +60,7 @@ def create_lobby_router(open_catalog: CatalogFactory, start_discussion: PhaseSta
         lobby.message_id = None
         await redraw(bot, lobbies, lobby)
 
-    @router.message(Command("game"))
+    @router.message(Command(GAME_COMMAND))
     async def cmd_game_elsewhere(message: Message) -> None:
         await message.answer(Errors.GROUP_ONLY)
 
@@ -109,6 +110,15 @@ def create_lobby_router(open_catalog: CatalogFactory, start_discussion: PhaseSta
         if lobby is None:
             return
         cycle_spies_count(lobby)
+        await redraw(bot, lobbies, lobby)
+        await callback.answer()
+
+    @router.callback_query(LobbyCB.filter(F.action == LobbyAction.TURN))
+    async def cb_turn_seconds(callback: CallbackQuery, bot: Bot, lobbies: LobbyRepository) -> None:
+        lobby = await _host_lobby(callback, lobbies)
+        if lobby is None:
+            return
+        cycle_turn_seconds(lobby)
         await redraw(bot, lobbies, lobby)
         await callback.answer()
 
@@ -177,6 +187,7 @@ def create_lobby_router(open_catalog: CatalogFactory, start_discussion: PhaseSta
                     rng=secure_rng(),
                     category_ids=lobby.category_ids,
                     mode=GameMode.GROUP,
+                    turn_seconds=lobby.turn_seconds,
                 )
         except EmptyWordCatalogError:
             logger.exception("чат %s: партию не собрать, словарь пуст", lobby.chat_id)

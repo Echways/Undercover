@@ -29,6 +29,7 @@ SCREENS = (
     texts.Setup,
     texts.Reveal,
     texts.Discussion,
+    texts.Timer,
     texts.Errors,
     texts.Cards,
 )

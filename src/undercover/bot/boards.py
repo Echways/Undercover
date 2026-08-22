@@ -21,7 +21,13 @@ class DiscussionBoard(Protocol):
         keyboard: InlineKeyboardMarkup,
     ) -> int: ...
 
-    async def close_turn(self, bot: Bot, state: GameSessionState, caption: str) -> None: ...
+    async def close_turn(
+        self,
+        bot: Bot,
+        state: GameSessionState,
+        caption: str,
+        keyboard: InlineKeyboardMarkup | None = None,
+    ) -> None: ...
 
 
 class SingleCardBoard:
@@ -38,7 +44,13 @@ class SingleCardBoard:
         )
         return message.message_id
 
-    async def close_turn(self, bot: Bot, state: GameSessionState, caption: str) -> None:
+    async def close_turn(
+        self,
+        bot: Bot,
+        state: GameSessionState,
+        caption: str,
+        keyboard: InlineKeyboardMarkup | None = None,
+    ) -> None:
         return None
 
 
@@ -54,7 +66,13 @@ class FeedBoard:
         message = await bot.send_photo(state.chat_id, photo, caption=caption, reply_markup=keyboard)
         return message.message_id
 
-    async def close_turn(self, bot: Bot, state: GameSessionState, caption: str) -> None:
+    async def close_turn(
+        self,
+        bot: Bot,
+        state: GameSessionState,
+        caption: str,
+        keyboard: InlineKeyboardMarkup | None = None,
+    ) -> None:
         if state.current_message_id is None:
             return
         try:
@@ -62,7 +80,7 @@ class FeedBoard:
                 chat_id=state.chat_id,
                 message_id=state.current_message_id,
                 caption=caption,
-                reply_markup=None,
+                reply_markup=keyboard,
             )
         except TelegramBadRequest as error:
             logger.info("ход %s не заморозился (%s)", state.current_message_id, error)

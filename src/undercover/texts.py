@@ -5,6 +5,8 @@ from undercover.game.engine import MAX_NAME_LENGTH, MAX_PLAYERS, MIN_PLAYERS
 
 BRAND: Final = "Undercover"
 
+GAME_COMMAND: Final = "undercover"
+
 
 class Start:
     GREETING: Final = (
@@ -15,7 +17,7 @@ class Start:
         "Здесь партия идёт с одного телефона: он передаётся из рук в руки, "
         "карточки открывает ведущий.\n\n"
         "Играете не за одним столом? Добавьте бота в группу и отправьте там "
-        "/game — слово придёт каждому в личку.\n\n"
+        f"/{GAME_COMMAND} — слово придёт каждому в личку.\n\n"
         "Соберём состав."
     )
     COMMAND_DESCRIPTION: Final = "Новая партия"
@@ -132,12 +134,18 @@ class Discussion:
     ALL_SPOKE: Final = "Высказались все — время искать шпиона."
 
 
+class Timer:
+    COUNTDOWN: Final = "{bar}  {seconds} с"
+    SPENT: Final = "Время хода: {seconds} с"
+    EXPIRED: Final = "Время вышло"
+
+
 class Errors:
     SESSION_NOT_FOUND: Final = "Партия не найдена — похоже, она уже закончилась."
     NOT_HOST: Final = "Сейчас эта кнопка не ваша — её нажимает ведущий."
-    LOBBY_CLOSED: Final = "Это лобби уже закрыто. Отправьте /game, чтобы собрать новое."
+    LOBBY_CLOSED: Final = f"Это лобби уже закрыто. Отправьте /{GAME_COMMAND}, чтобы собрать новое."
     GAME_IN_CHAT: Final = "В этом чате уже идёт партия — сначала доиграйте её."
-    GROUP_ONLY: Final = "Так играют в группе: добавьте бота туда и отправьте /game."
+    GROUP_ONLY: Final = f"Так играют в группе: добавьте бота туда и отправьте /{GAME_COMMAND}."
     STALE_TURN: Final = "Сейчас очередь другого игрока — смотрите на экран партии."
     BROKEN_SESSION: Final = "Партия повреждена. Начните новую."
     EMPTY_CATALOG: Final = (
@@ -164,6 +172,8 @@ class Buttons:
     JOIN_LOBBY: Final = "Я в игре"
     LEAVE_LOBBY: Final = "Выйти из состава"
     SPIES_COUNT: Final = "Шпионов: {count}"
+    TURN_LIMIT: Final = "Ход: {seconds} с"
+    TURN_OFF: Final = "Ход: без таймера"
 
     SHOW_CARD: Final = "Посмотреть карточку"
     NEXT_PLAYER: Final = "Дальше"
@@ -195,5 +205,17 @@ class Cards:
     RESULT_WORD_CAPTION: Final = "ЗАГАДАННОЕ СЛОВО"
 
 
+BAR_CELLS: Final = 10
+BAR_FULL: Final = "█"
+BAR_EMPTY: Final = "░"
+
+
 def empty_catalog_text(category_ids: Sequence[int]) -> str:
     return Errors.EMPTY_CATEGORIES if category_ids else Errors.EMPTY_CATALOG
+
+
+def countdown_line(seconds_left: int, total: int) -> str:
+    filled = round(BAR_CELLS * seconds_left / total) if total > 0 else 0
+    return Timer.COUNTDOWN.format(
+        bar=BAR_FULL * filled + BAR_EMPTY * (BAR_CELLS - filled), seconds=seconds_left
+    )
