@@ -93,5 +93,6 @@ class GameSessionLog(Base):
     players_count: Mapped[int] = mapped_column(SmallInteger)
     spies_count: Mapped[int] = mapped_column(SmallInteger)
     word_id: Mapped[int | None] = mapped_column(ForeignKey("words.id"))
+    winner: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

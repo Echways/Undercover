@@ -36,3 +36,17 @@ async def test_downgrade_removes_domain_tables(
         assert not DOMAIN_TABLES & await _table_names(migrated_dsn)
     finally:
         assert run_alembic(postgres_env, "upgrade", "head").returncode == 0
+
+
+async def _columns(dsn: str, table: str) -> set[str]:
+    engine = create_async_engine(dsn)
+    try:
+        async with engine.connect() as connection:
+            described = await connection.run_sync(lambda sync: inspect(sync).get_columns(table))
+            return {column["name"] for column in described}
+    finally:
+        await engine.dispose()
+
+
+async def test_the_journal_has_a_place_for_the_winner(migrated_dsn: str) -> None:
+    assert "winner" in await _columns(migrated_dsn, "game_sessions_log")

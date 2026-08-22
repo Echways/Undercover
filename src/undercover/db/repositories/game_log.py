@@ -21,6 +21,7 @@ class GameLogRepository:
                 players_count=len(state.players),
                 spies_count=sum(player.is_spy for player in state.players),
                 word_id=state.word_id,
+                winner=state.winner,
                 started_at=state.created_at,
                 finished_at=finished_at or datetime.now(UTC),
             )

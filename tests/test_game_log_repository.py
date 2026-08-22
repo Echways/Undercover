@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import (
 
 from undercover.db.models import Category, GameSessionLog, SpyHint, Word
 from undercover.db.repositories.game_log import GameLogRepository, game_log_writer
-from undercover.game.models import GameSessionState, GameStatus, PlayerState
+from undercover.game.models import GameSessionState, GameStatus, PlayerState, Winner
 
 pytestmark = pytest.mark.integration
 
@@ -88,6 +88,24 @@ async def test_every_game_gets_its_own_row(db_session: AsyncSession) -> None:
     )
 
     assert len(await stored_rows(db_session)) == 2
+
+
+async def test_a_won_game_records_its_winner(db_session: AsyncSession) -> None:
+    word = await add_word(db_session)
+
+    await GameLogRepository(db_session).record_finished(make_state(word.id, winner=Winner.SPIES))
+
+    (row,) = await stored_rows(db_session)
+    assert row.winner == Winner.SPIES
+
+
+async def test_a_game_ended_early_records_no_winner(db_session: AsyncSession) -> None:
+    word = await add_word(db_session)
+
+    await GameLogRepository(db_session).record_finished(make_state(word.id))
+
+    (row,) = await stored_rows(db_session)
+    assert row.winner is None
 
 
 async def test_a_word_missing_from_the_catalog_is_reported(db_session: AsyncSession) -> None:
