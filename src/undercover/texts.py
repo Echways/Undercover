@@ -163,6 +163,7 @@ class Errors:
 
 
 class Buttons:
+    AUTOFILL_NAMES: Final = "Придумать имена"
     UNDO_NAME: Final = "Убрать последнее"
     CATEGORIES_DONE: Final = "Готово"
     CHANGE_CATEGORIES: Final = "Категории"

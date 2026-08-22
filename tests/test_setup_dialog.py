@@ -33,6 +33,7 @@ from undercover.game.engine import (
     max_spies_count,
 )
 from undercover.game.models import GameStatus
+from undercover.game.nicknames import NICKNAMES
 from undercover.texts import Buttons, Errors, Reveal
 from undercover.texts import Setup as SetupTexts
 
@@ -346,6 +347,64 @@ async def test_the_last_name_can_be_taken_back(table: Table) -> None:
     await table.click(Buttons.UNDO_NAME)
 
     assert names_window(1, 3, "Аня") in table.text
+
+
+async def test_the_whole_table_can_be_named_by_the_bot(table: Table) -> None:
+    await table.send("4")
+    await table.send("1")
+
+    await table.click(Buttons.AUTOFILL_NAMES)
+    await table.click(Buttons.PLAY)
+
+    names = [player.name for player in table.games.stored.players]
+    assert len(names) == 4
+    assert len(set(names)) == 4
+    assert set(names) <= set(NICKNAMES)
+
+
+async def test_the_bot_names_only_the_empty_seats(table: Table) -> None:
+    await table.send("4")
+    await table.send("1")
+    await table.send("Аня")
+    await table.send("Борис")
+
+    await table.click(Buttons.AUTOFILL_NAMES)
+    await table.click(Buttons.PLAY)
+
+    names = [player.name for player in table.games.stored.players]
+    assert names[:2] == ["Аня", "Борис"]
+    assert set(names[2:]) <= set(NICKNAMES)
+
+
+async def test_the_bot_never_names_a_twin(table: Table) -> None:
+    guest = NICKNAMES[0]
+    await table.send("3")
+    await table.send("1")
+    await table.send(guest.lower())
+
+    await table.click(Buttons.AUTOFILL_NAMES)
+
+    assert table.text.count(guest.lower()) == 1
+
+
+async def test_a_named_table_goes_straight_to_the_categories(picky_table: Table) -> None:
+    await picky_table.send("3")
+    await picky_table.send("1")
+
+    await picky_table.click(Buttons.AUTOFILL_NAMES)
+
+    assert ask_categories(SetupTexts.ALL_CATEGORIES) in picky_table.text
+
+
+async def test_the_bot_names_wipe_the_last_complaint(table: Table) -> None:
+    await table.send("3")
+    await table.send("1")
+    await table.send("Аня")
+    await table.send("Аня")
+
+    await table.click(Buttons.AUTOFILL_NAMES)
+
+    assert SetupTexts.DUPLICATE_NAME.format(name="Аня") not in table.text
 
 
 async def test_there_is_nothing_to_take_back_before_the_first_name(table: Table) -> None:

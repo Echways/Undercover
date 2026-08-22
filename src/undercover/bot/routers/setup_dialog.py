@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from operator import itemgetter
 from typing import Any, Final, TypedDict, cast
@@ -31,6 +32,7 @@ from undercover.game.engine import (
     create_session,
     max_spies_count,
 )
+from undercover.game.nicknames import pick_nicknames
 from undercover.redis.game_state import GameStateRepository
 from undercover.texts import Buttons, empty_catalog_text
 from undercover.texts import Setup as SetupTexts
@@ -92,6 +94,12 @@ class SetupDraft:
         return [item["id"] for item in self.chosen_categories]
 
     @property
+    def free_slots(self) -> int:
+        if self.players_count is None:
+            return 0
+        return self.players_count - len(self.names)
+
+    @property
     def offers_a_choice(self) -> bool:
         return len(self.categories) >= MIN_CATEGORIES_TO_CHOOSE
 
@@ -140,11 +148,18 @@ def create_setup_dialog(open_catalog: CatalogFactory, start_reveal: PhaseStarter
                 on_success=_on_player_name,
                 on_error=_on_input_error,
             ),
-            Button(
-                Const(Buttons.UNDO_NAME),
-                id="undo_name",
-                on_click=_on_undo_name,
-                when="entered",
+            Row(
+                Button(
+                    Const(Buttons.AUTOFILL_NAMES),
+                    id="autofill_names",
+                    on_click=_on_autofill_names,
+                ),
+                Button(
+                    Const(Buttons.UNDO_NAME),
+                    id="undo_name",
+                    on_click=_on_undo_name,
+                    when="entered",
+                ),
             ),
             state=Setup.ask_player_names,
             parse_mode=None,
@@ -306,10 +321,27 @@ async def _on_player_name(
         _set_error(dialog_manager, SetupTexts.DUPLICATE_NAME.format(name=name))
         return
 
-    names = [*draft.names, name]
-    dialog_manager.dialog_data[NAMES] = names
+    await _seat_players(dialog_manager, draft, (name,))
+
+
+async def _on_autofill_names(
+    _callback: CallbackQuery, _button: Button, dialog_manager: DialogManager
+) -> None:
+    draft = SetupDraft.read(dialog_manager)
+    if draft.players_count is None:
+        await _restart(dialog_manager, SetupTexts.BROKEN_DRAFT)
+        return
+
+    nicknames = pick_nicknames(draft.free_slots, draft.names, secure_rng())
+    await _seat_players(dialog_manager, draft, nicknames)
+
+
+async def _seat_players(
+    dialog_manager: DialogManager, draft: SetupDraft, arriving: Sequence[str]
+) -> None:
+    dialog_manager.dialog_data[NAMES] = [*draft.names, *arriving]
     _clear_error(dialog_manager)
-    if len(names) < draft.players_count:
+    if len(arriving) < draft.free_slots:
         return
     if draft.offers_a_choice:
         await dialog_manager.next()
