@@ -11,9 +11,9 @@ from undercover.bot.dispatcher import (
 from undercover.config import ConfigurationError, load_settings
 from undercover.db.schema import SchemaUpgradeError, upgrade_to_head
 from undercover.di import DependencyUnavailableError, build_dependencies
-from undercover.log import DEFAULT_LEVEL, configure_logging
+from undercover.log import DEFAULT_LEVEL, configure_logging, get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 STARTUP_FAILURES = (
     ConfigurationError,
@@ -29,10 +29,10 @@ def main() -> None:
     try:
         asyncio.run(_run())
     except STARTUP_FAILURES as error:
-        logger.error("Запуск невозможен: %s", _reason(error))
+        logger.error("startup.failed", error=type(error).__name__, reason=_reason(error))
         raise SystemExit(1) from None
     except KeyboardInterrupt:
-        logger.info("Остановлено вручную")
+        logger.info("shutdown.by_hand")
 
 
 async def _run() -> None:
@@ -45,10 +45,11 @@ async def _run() -> None:
         await dependencies.check_connections()
         await upgrade_to_head(dependencies.engine)
         dispatcher = create_dispatcher(dependencies)
-        logger.info("Undercover: запускаем опрос Telegram")
+        allowed = resolve_allowed_updates(dispatcher)
+        logger.info("polling.starting", log_level=settings.log_level, allowed_updates=allowed)
         await dispatcher.start_polling(
             bot,
-            allowed_updates=resolve_allowed_updates(dispatcher),
+            allowed_updates=allowed,
             drop_pending_updates=True,
         )
     finally:

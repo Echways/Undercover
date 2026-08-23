@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import datetime
 
@@ -164,7 +164,7 @@ def stats_source(
     sessionmaker: async_sessionmaker[AsyncSession],
 ) -> Callable[[], AbstractAsyncContextManager[StatsRepository]]:
     @asynccontextmanager
-    async def open_stats() -> AsyncIterator[StatsRepository]:
+    async def open_stats() -> AsyncGenerator[StatsRepository]:
         async with sessionmaker() as session:
             yield StatsRepository(session)
 

@@ -1,12 +1,14 @@
 import logging
 import sys
 from collections.abc import Sequence
-from typing import Final
+from typing import Any, Final
 
 import structlog
+from structlog.stdlib import BoundLogger
 from structlog.typing import Processor
 
 DEFAULT_LEVEL: Final = "INFO"
+PREVIEW_LIMIT: Final = 160
 
 TIMESTAMPER: Processor = structlog.processors.TimeStamper(fmt="iso", utc=True)
 
@@ -18,20 +20,20 @@ SHARED_PROCESSORS: tuple[Processor, ...] = (
     structlog.processors.StackInfoRenderer(),
 )
 
+structlog.configure(
+    processors=[
+        *SHARED_PROCESSORS,
+        structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+    ],
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=BoundLogger,
+    cache_logger_on_first_use=True,
+)
+
 
 def configure_logging(level: str, *, json_output: bool | None = None) -> None:
     if json_output is None:
         json_output = not sys.stderr.isatty()
-
-    structlog.configure(
-        processors=[
-            *SHARED_PROCESSORS,
-            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
-        ],
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        wrapper_class=structlog.stdlib.BoundLogger,
-        cache_logger_on_first_use=True,
-    )
 
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(
@@ -46,6 +48,24 @@ def configure_logging(level: str, *, json_output: bool | None = None) -> None:
         root.removeHandler(existing)
     root.addHandler(handler)
     root.setLevel(level)
+
+
+def get_logger(name: str) -> BoundLogger:
+    return structlog.stdlib.get_logger(name)
+
+
+def bind(**fields: Any) -> None:
+    structlog.contextvars.bind_contextvars(**fields)
+
+
+def unbind_all() -> None:
+    structlog.contextvars.clear_contextvars()
+
+
+def preview(text: str | None, limit: int = PREVIEW_LIMIT) -> str | None:
+    if text is None or len(text) <= limit:
+        return text
+    return f"{text[:limit]}…"
 
 
 def _render_chain(json_output: bool) -> Sequence[Processor]:

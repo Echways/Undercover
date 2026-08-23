@@ -1,5 +1,5 @@
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import cast
 
@@ -26,7 +26,7 @@ class _StubEngine:
         self.disposed = False
 
     @asynccontextmanager
-    async def connect(self) -> AsyncIterator[_StubConnection]:
+    async def connect(self) -> AsyncGenerator[_StubConnection]:
         if self._failure is not None:
             raise self._failure
         yield _StubConnection()

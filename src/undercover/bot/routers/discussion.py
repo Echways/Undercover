@@ -1,5 +1,4 @@
 import asyncio
-import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -27,11 +26,12 @@ from undercover.game.voting import (
     open_direction_ballot,
     tally,
 )
+from undercover.log import get_logger
 from undercover.media.card_renderer import CARD_SUFFIX, render_speaker_card
 from undercover.redis.game_state import GameStateRepository
 from undercover.texts import VOTE_REFUSALS, Buttons, Discussion, Errors, Timer, Vote
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 BROKEN_ORDER: Final = "порядок высказываний испорчен"
 
@@ -132,6 +132,13 @@ async def start_discussion(
 ) -> None:
     state.status = GameStatus.DISCUSSION
     state.discussion_order = build_discussion_order(alive(state), secure_rng())
+    logger.info(
+        "discussion.started",
+        session_id=state.session_id,
+        chat_id=state.chat_id,
+        round=state.discussion_round,
+        speakers=len(state.discussion_order),
+    )
     await open_turn(bot, games, state, 0, flow)
 
 
@@ -167,6 +174,16 @@ async def open_turn(
     state.current_message_id = message_id
     await games.save(state)
 
+    logger.info(
+        "turn.opened",
+        session_id=state.session_id,
+        chat_id=state.chat_id,
+        round=state.discussion_round,
+        cursor=cursor,
+        speaker=name,
+        is_last=is_last,
+        turn_seconds=state.turn_seconds,
+    )
     _watch_turn(bot, games, state, caption, keyboard, flow)
 
 
@@ -209,7 +226,12 @@ async def report_broken(
     callback: CallbackQuery, state: GameSessionState, reason: str = BROKEN_ORDER
 ) -> None:
     await callback.answer(Errors.BROKEN_SESSION, show_alert=True)
-    logger.error("партия %s: %s (%r)", state.session_id, reason, state.discussion_order)
+    logger.error(
+        "discussion.broken_order",
+        session_id=state.session_id,
+        reason=reason,
+        order=list(state.discussion_order),
+    )
 
 
 def speaker_caption(state: GameSessionState, cursor: int) -> str:
@@ -232,6 +254,14 @@ async def _expire_turn(games: GameStateRepository, flow: TurnFlow, bot: Bot, tur
             return
         if (state.discussion_round, state.discussion_cursor) != (turn.round, turn.cursor):
             return
+
+        logger.info(
+            "turn.expired",
+            session_id=state.session_id,
+            chat_id=state.chat_id,
+            round=turn.round,
+            cursor=turn.cursor,
+        )
 
         next_cursor = state.discussion_cursor + 1
         if next_cursor >= len(state.discussion_order):
@@ -279,7 +309,12 @@ def _watch_turn(
 
 
 def _report_broken_order(state: GameSessionState) -> None:
-    logger.error("партия %s: %s (%r)", state.session_id, BROKEN_ORDER, state.discussion_order)
+    logger.error(
+        "discussion.broken_order",
+        session_id=state.session_id,
+        reason=BROKEN_ORDER,
+        order=list(state.discussion_order),
+    )
 
 
 def _direction_tally(state: GameSessionState) -> str:

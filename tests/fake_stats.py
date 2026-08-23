@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -23,5 +23,5 @@ class FakeStats:
         return self.profile
 
     @asynccontextmanager
-    async def open(self) -> AsyncIterator["FakeStats"]:
+    async def open(self) -> AsyncGenerator["FakeStats"]:
         yield self

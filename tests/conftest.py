@@ -2,12 +2,16 @@ import os
 import subprocess
 import sys
 from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import AbstractContextManager
 from pathlib import Path
 
 import docker
 import pytest
+import structlog
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from structlog.testing import capture_logs
+from structlog.typing import EventDict
 from testcontainers.community.postgres import PostgresContainer
 from testcontainers.community.redis import RedisContainer
 
@@ -36,6 +40,26 @@ VALID_ENV: dict[str, str] = {
 }
 
 SetEnv = Callable[..., None]
+
+JOURNAL_PROCESSORS = (
+    structlog.contextvars.merge_contextvars,
+    structlog.processors.format_exc_info,
+)
+
+
+def journal() -> AbstractContextManager[list[EventDict]]:
+    return capture_logs(JOURNAL_PROCESSORS)
+
+
+def events(records: list[EventDict]) -> list[str]:
+    return [record["event"] for record in records]
+
+
+def entry(records: list[EventDict], event: str) -> EventDict:
+    for record in records:
+        if record["event"] == event:
+            return record
+    raise AssertionError(f"события {event} нет среди {events(records)}")
 
 
 @pytest.fixture

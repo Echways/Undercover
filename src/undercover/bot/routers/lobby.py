@@ -1,10 +1,9 @@
-import logging
-
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
+from undercover.bot.acks import ack
 from undercover.bot.filters import IN_GROUP
 from undercover.bot.lobby_view import (
     LobbyAction,
@@ -33,11 +32,12 @@ from undercover.game.lobby import (
     toggle_ruleset,
 )
 from undercover.game.models import GameMode, LobbyState, LobbyView
+from undercover.log import get_logger
 from undercover.redis.game_state import GameStateRepository
 from undercover.redis.lobby_state import LobbyRepository
 from undercover.texts import GAME_COMMAND, Errors, Lobby, Rules, empty_catalog_text
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def create_lobby_router(catalog: CachedCatalog, start_discussion: PhaseStarter) -> Router:
@@ -181,13 +181,26 @@ def create_lobby_router(catalog: CachedCatalog, start_discussion: PhaseStarter) 
         if lobby is None:
             return
         if await games.load_active(lobby.chat_id) is not None:
-            await callback.answer(Errors.GAME_IN_CHAT, show_alert=True)
+            logger.info("lobby.play_refused", chat_id=lobby.chat_id, reason="партия уже идёт")
+            await ack(callback, Errors.GAME_IN_CHAT, show_alert=True)
             return
         try:
             ensure_playable(lobby)
         except GameRulesError as error:
-            await callback.answer(str(error), show_alert=True)
+            logger.info("lobby.play_refused", chat_id=lobby.chat_id, reason=str(error))
+            await ack(callback, str(error), show_alert=True)
             return
+
+        await ack(callback)
+        logger.info(
+            "lobby.play_requested",
+            chat_id=lobby.chat_id,
+            players=len(lobby.players),
+            spies=lobby.spies_count,
+            ruleset=lobby.ruleset.value,
+            turn_seconds=lobby.turn_seconds,
+            categories=sorted(lobby.category_ids),
+        )
 
         try:
             async with catalog.open() as words:
@@ -205,16 +218,28 @@ def create_lobby_router(catalog: CachedCatalog, start_discussion: PhaseStarter) 
                     turn_seconds=lobby.turn_seconds,
                 )
         except EmptyWordCatalogError:
-            logger.exception("чат %s: партию не собрать, словарь пуст", lobby.chat_id)
-            await callback.answer(empty_catalog_text(lobby.category_ids), show_alert=True)
+            logger.warning(
+                "lobby.empty_catalog",
+                chat_id=lobby.chat_id,
+                categories=sorted(lobby.category_ids),
+            )
+            await bot.send_message(lobby.chat_id, empty_catalog_text(lobby.category_ids))
             return
 
         undelivered = await deliver_roles(bot, state)
         if undelivered:
-            await callback.answer(Lobby.DELIVERY_FAILED, show_alert=True)
+            logger.warning(
+                "lobby.play_aborted",
+                chat_id=lobby.chat_id,
+                session_id=state.session_id,
+                reason="роли дошли не всем",
+                undelivered=[player.name for player in undelivered],
+            )
             await bot.send_message(
                 lobby.chat_id,
-                Lobby.OPEN_DM.format(names=", ".join(player.name for player in undelivered))
+                Lobby.DELIVERY_FAILED
+                + "\n"
+                + Lobby.OPEN_DM.format(names=", ".join(player.name for player in undelivered))
                 + f"\n{await join_link(bot, lobby.chat_id)}",
             )
             return
@@ -222,8 +247,14 @@ def create_lobby_router(catalog: CachedCatalog, start_discussion: PhaseStarter) 
         await games.save(state)
         await lobbies.delete(lobby.chat_id)
         await show_or_resend_text(bot, lobby.chat_id, lobby.message_id, Lobby.STARTED)
+        logger.info(
+            "game.started",
+            chat_id=lobby.chat_id,
+            session_id=state.session_id,
+            players=len(state.players),
+            spies=sum(player.is_spy for player in state.players),
+        )
         await start_discussion(bot, games, state)
-        await callback.answer()
 
     return router
 

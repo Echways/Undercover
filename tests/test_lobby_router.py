@@ -5,8 +5,8 @@ from typing import Final
 
 import pytest
 from aiogram import Dispatcher
-from aiogram.exceptions import TelegramForbiddenError
-from aiogram.methods import SendMessage, SendPhoto
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+from aiogram.methods import AnswerCallbackQuery, SendMessage, SendPhoto
 
 from fake_bot import CHAT_ID, HOST_ID, FakeSession, make_bot, message_update
 from fake_games import FakeGameStateRepository
@@ -262,6 +262,30 @@ async def test_a_started_game_hands_out_roles_and_opens_the_first_turn(group: Gr
     assert Lobby.STARTED in [screen.text for screen in group.screens]
 
 
+async def test_the_press_is_acknowledged_before_the_long_start(group: Group) -> None:
+    await seated(group, GUEST_ID, OTHER_ID)
+
+    await group.press(Buttons.PLAY)
+
+    kinds = [type(request) for request in group.session.requests]
+    assert kinds.index(AnswerCallbackQuery) < kinds.index(SendPhoto), (
+        "Telegram гасит callback_query_id за секунды — отвечать надо до раздачи ролей"
+    )
+
+
+async def test_an_expired_press_does_not_cancel_a_started_game(group: Group) -> None:
+    await seated(group, GUEST_ID, OTHER_ID)
+    group.session.failures[AnswerCallbackQuery] = TelegramBadRequest(
+        method=AnswerCallbackQuery(callback_query_id="cb-1"),
+        message="Bad Request: query is too old and response timeout expired",
+    )
+
+    await group.press(Buttons.PLAY)
+
+    assert group.games.stored.status is GameStatus.DISCUSSION
+    assert group.lobbies.is_empty
+
+
 async def test_the_first_turn_lands_in_the_group_chat(group: Group) -> None:
     await seated(group, GUEST_ID, OTHER_ID)
 
@@ -323,7 +347,7 @@ async def test_an_undelivered_role_cancels_the_start_and_keeps_the_lobby(group: 
 
     assert group.games.is_empty
     assert len(group.lobbies.stored.players) == 3
-    assert Lobby.DELIVERY_FAILED in group.alerts
+    assert any(Lobby.DELIVERY_FAILED in (text or "") for text in replies(group))
     assert any("start=join_" in (text or "") for text in replies(group))
 
 

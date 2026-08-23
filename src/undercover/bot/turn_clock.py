@@ -1,7 +1,6 @@
 import asyncio
-import logging
 from asyncio import Lock
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -12,9 +11,10 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.types import InlineKeyboardMarkup
 
 from undercover.game.models import GameSessionState
+from undercover.log import bind, get_logger, unbind_all
 from undercover.texts import countdown_line
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 TICK: Final = timedelta(seconds=5)
 
@@ -24,7 +24,7 @@ class KeyedLocks:
         self._locks: dict[str, tuple[Lock, int]] = {}
 
     @asynccontextmanager
-    async def held(self, key: str) -> AsyncIterator[None]:
+    async def held(self, key: str) -> AsyncGenerator[None]:
         lock = self._reserve(key)
         try:
             async with lock:
@@ -107,6 +107,14 @@ class TurnClock:
     async def _run(
         self, bot: Bot, state: GameSessionState, view: TurnView, on_expire: OnExpire
     ) -> None:
+        unbind_all()
+        bind(
+            session_id=state.session_id,
+            chat_id=state.chat_id,
+            round=state.discussion_round,
+            cursor=state.discussion_cursor,
+        )
+
         deadline = state.turn_deadline
         if deadline is None:
             return
@@ -142,13 +150,21 @@ class TurnClock:
                 reply_markup=view.keyboard,
             )
         except TelegramAPIError as error:
-            logger.info("отсчёт партии %s не перерисовался (%s)", state.session_id, error)
+            logger.warning(
+                "turn.countdown_stuck",
+                session_id=state.session_id,
+                message_id=state.current_message_id,
+                error=type(error).__name__,
+                reason=str(error),
+            )
 
     def _forget(self, session_id: str, finished: asyncio.Task[None]) -> None:
         if self._tasks.get(session_id) is finished:
             del self._tasks[session_id]
         if not finished.cancelled() and finished.exception() is not None:
-            logger.error("часовой партии %s упал", session_id, exc_info=finished.exception())
+            logger.error(
+                "turn.watchdog_crashed", session_id=session_id, exc_info=finished.exception()
+            )
 
 
 @dataclass(frozen=True, slots=True)

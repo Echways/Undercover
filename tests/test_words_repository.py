@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 
 import pytest
@@ -13,7 +13,7 @@ pytestmark = pytest.mark.integration
 
 
 @contextmanager
-def executed_statements() -> Iterator[list[str]]:
+def executed_statements() -> Generator[list[str]]:
     statements: list[str] = []
 
     def record(

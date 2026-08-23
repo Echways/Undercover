@@ -15,6 +15,8 @@ from undercover.bot.dispatcher import (
     create_dispatcher,
     resolve_allowed_updates,
 )
+from undercover.bot.middlewares.api_log import TelegramApiLogMiddleware
+from undercover.bot.middlewares.observability import UpdateLogMiddleware
 from undercover.bot.middlewares.throttling import ThrottlingMiddleware
 from undercover.bot.turn_clock import TurnClock
 from undercover.di import AppDependencies, build_dependencies
@@ -77,6 +79,21 @@ def test_throttling_guards_both_messages_and_presses(dispatcher: Dispatcher) -> 
     assert len(on_messages) == len(on_presses) == 1
 
     assert on_messages[0] is on_presses[0]
+
+
+def test_every_update_is_narrated_in_the_log(dispatcher: Dispatcher) -> None:
+    assert any(
+        isinstance(middleware, UpdateLogMiddleware)
+        for middleware in dispatcher.update.outer_middleware
+    )
+
+
+def test_every_telegram_call_is_written_down() -> None:
+    bot = create_bot(settings_for())
+
+    assert any(
+        isinstance(middleware, TelegramApiLogMiddleware) for middleware in bot.session.middleware
+    )
 
 
 def test_the_fsm_lives_in_redis_with_dialog_keys(

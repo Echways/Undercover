@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
@@ -45,7 +45,7 @@ class FakeWords:
         return self.categories
 
     @asynccontextmanager
-    async def open(self) -> AsyncIterator["FakeWords"]:
+    async def open(self) -> AsyncGenerator["FakeWords"]:
         self.opened += 1
         try:
             yield self

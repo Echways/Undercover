@@ -44,7 +44,9 @@ def test_a_broken_environment_is_explained(
 ) -> None:
     fail_with(monkeypatch, ConfigurationError("не задан BOT_TOKEN"))
 
-    assert "не задан BOT_TOKEN" in logged(capsys)["event"]
+    record = logged(capsys)
+    assert record["event"] == "startup.failed"
+    assert "не задан BOT_TOKEN" in record["reason"]
 
 
 def test_an_unreachable_service_is_explained(
@@ -52,7 +54,7 @@ def test_an_unreachable_service_is_explained(
 ) -> None:
     fail_with(monkeypatch, DependencyUnavailableError("нет подключения к Redis"))
 
-    assert "нет подключения к Redis" in logged(capsys)["event"]
+    assert "нет подключения к Redis" in logged(capsys)["reason"]
 
 
 def test_a_rejected_token_names_the_culprit(
@@ -60,9 +62,10 @@ def test_a_rejected_token_names_the_culprit(
 ) -> None:
     fail_with(monkeypatch, TelegramUnauthorizedError(method=GetMe(), message="Unauthorized"))
 
-    event = logged(capsys)["event"]
-    assert "BOT_TOKEN" in event
-    assert "@BotFather" in event
+    record = logged(capsys)
+    assert record["error"] == "TelegramUnauthorizedError"
+    assert "BOT_TOKEN" in record["reason"]
+    assert "@BotFather" in record["reason"]
 
 
 def test_a_network_outage_is_explained(
@@ -70,7 +73,7 @@ def test_a_network_outage_is_explained(
 ) -> None:
     fail_with(monkeypatch, TelegramNetworkError(method=GetMe(), message="таймаут"))
 
-    assert "нет связи с Telegram" in logged(capsys)["event"]
+    assert "нет связи с Telegram" in logged(capsys)["reason"]
 
 
 def test_a_failed_startup_leaves_no_traceback(
@@ -97,4 +100,4 @@ def test_a_manual_stop_is_not_a_failure(
 
     record = logged(capsys)
     assert record["level"] == "info"
-    assert "Остановлено вручную" in record["event"]
+    assert record["event"] == "shutdown.by_hand"

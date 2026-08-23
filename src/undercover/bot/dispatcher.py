@@ -1,4 +1,3 @@
-import logging
 from functools import partial
 
 from aiogram import Bot, Dispatcher
@@ -10,6 +9,8 @@ from aiogram.types import BotCommand, BotCommandScopeAllGroupChats
 from aiogram_dialog import setup_dialogs
 
 from undercover.bot.errors import create_error_router
+from undercover.bot.middlewares.api_log import TelegramApiLogMiddleware
+from undercover.bot.middlewares.observability import UpdateLogMiddleware
 from undercover.bot.middlewares.throttling import ThrottlingMiddleware
 from undercover.bot.routers.discussion import (
     TurnFlow,
@@ -31,16 +32,19 @@ from undercover.db.repositories.stats import stats_source
 from undercover.db.repositories.words import words_source
 from undercover.di import AppDependencies
 from undercover.game.catalog import CachedCatalog
+from undercover.log import get_logger
 from undercover.texts import GAME_COMMAND, RESET_COMMAND, STATS_COMMAND, Start
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def create_bot(settings: Settings) -> Bot:
-    return Bot(
+    bot = Bot(
         token=settings.bot_token.get_secret_value(),
         default=DefaultBotProperties(parse_mode=None),
     )
+    bot.session.middleware(TelegramApiLogMiddleware())
+    return bot
 
 
 def create_dispatcher(dependencies: AppDependencies) -> Dispatcher:
@@ -48,6 +52,8 @@ def create_dispatcher(dependencies: AppDependencies) -> Dispatcher:
         storage=_create_storage(dependencies),
         **dependencies.as_workflow_data(),
     )
+
+    dispatcher.update.outer_middleware(UpdateLogMiddleware())
 
     throttling = ThrottlingMiddleware()
     dispatcher.message.outer_middleware(throttling)
@@ -101,4 +107,4 @@ async def _publish_commands(bot: Bot) -> None:
         await bot.set_my_commands([start])
         await bot.set_my_commands([start, game, stats, reset], scope=BotCommandScopeAllGroupChats())
     except Exception as error:
-        logger.warning("не удалось опубликовать меню команд: %s", error)
+        logger.warning("commands.publish_failed", error=type(error).__name__, reason=str(error))

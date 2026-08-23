@@ -81,7 +81,7 @@ Privacy mode групповому режиму не мешает: команды
 | `POSTGRES_HOST` | да | `postgres` в compose, `localhost` локально |
 | `POSTGRES_PORT` | нет | `5432` |
 | `REDIS_URL` | да | FSM aiogram и состояние партий |
-| `LOG_LEVEL` | нет | `INFO` |
+| `LOG_LEVEL` | нет | `INFO`; `DEBUG` добавляет трассировку каждого вызова Bot API |
 
 ## Словарь
 

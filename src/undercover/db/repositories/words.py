@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 
@@ -50,7 +50,7 @@ def words_source(
     sessionmaker: async_sessionmaker[AsyncSession],
 ) -> Callable[[], AbstractAsyncContextManager[WordsRepository]]:
     @asynccontextmanager
-    async def open_words() -> AsyncIterator[WordsRepository]:
+    async def open_words() -> AsyncGenerator[WordsRepository]:
         async with sessionmaker() as session:
             yield WordsRepository(session)
 
