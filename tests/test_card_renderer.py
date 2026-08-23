@@ -7,6 +7,15 @@ from PIL import Image, ImageChops
 
 from undercover.game.models import Winner
 from undercover.media.card_renderer import (
+    render_ballot_card,
+    render_civilian_card,
+    render_hidden_card,
+    render_result_card,
+    render_speaker_card,
+    render_spy_card,
+    render_verdict_card,
+)
+from undercover.media.layout import (
     BACKGROUND_NEUTRAL,
     BACKGROUND_UNDERCOVER,
     CARD_FORMAT,
@@ -18,17 +27,8 @@ from undercover.media.card_renderer import (
     HINT_MAX_SIZE,
     SAFE_MARGIN,
     TEMPLATES_DIR,
-    _font,
-    _text_width,
-    _wrap,
-    render_ballot_card,
-    render_civilian_card,
-    render_hidden_card,
-    render_result_card,
-    render_speaker_card,
-    render_spy_card,
-    render_verdict_card,
 )
+from undercover.media.typography import font, text_width, wrap
 
 RENDERERS: tuple[Callable[..., bytes], ...] = (
     render_hidden_card,
@@ -94,8 +94,7 @@ def test_renderers_are_synchronous() -> None:
         assert not inspect.iscoroutinefunction(render), render.__name__
 
 
-# Карточка сохраняется в JPEG, поэтому пиксели фона совпадают лишь с точностью до артефактов.
-CODEC_TOLERANCE = 24
+JPEG_ARTEFACT_TOLERANCE = 24
 
 
 def background_corner(file_name: str) -> tuple[int, ...]:
@@ -116,7 +115,7 @@ def assert_same_corner(payload: bytes, background_name: str) -> None:
     corner = card_corner(payload)
     expected = background_corner(background_name)
     assert all(
-        abs(actual - wanted) <= CODEC_TOLERANCE
+        abs(actual - wanted) <= JPEG_ARTEFACT_TOLERANCE
         for actual, wanted in zip(corner, expected, strict=True)
     ), f"{corner} != {expected}"
 
@@ -223,7 +222,7 @@ def content_box(payload: bytes, background_name: str) -> tuple[int, int, int, in
         Image.open(TEMPLATES_DIR / background_name) as background,
     ):
         difference = ImageChops.difference(card.convert("RGB"), background.convert("RGB"))
-        box = difference.convert("L").point(lambda level: level > CODEC_TOLERANCE).getbbox()
+        box = difference.convert("L").point(lambda level: level > JPEG_ARTEFACT_TOLERANCE).getbbox()
     assert box is not None, "на карточке ничего не нарисовано"
     return box
 
@@ -242,25 +241,25 @@ def test_content_stays_inside_the_safe_margin(
 
 
 def test_wrap_breaks_a_long_word_after_a_hyphen() -> None:
-    font = _font(FONT_BOLD, HEADLINE_MAX_SIZE)
+    face = font(FONT_BOLD, HEADLINE_MAX_SIZE)
 
-    assert _wrap("Мария-Антуанетта", font, CONTENT_WIDTH, 0) == ["Мария-", "Антуанетта"]
+    assert wrap("Мария-Антуанетта", face, CONTENT_WIDTH, 0) == ["Мария-", "Антуанетта"]
 
 
 def test_wrap_falls_back_to_letters_when_there_is_nowhere_to_break() -> None:
     word = "Аполлинария" * 3
-    font = _font(FONT_BOLD, HEADLINE_MAX_SIZE)
+    face = font(FONT_BOLD, HEADLINE_MAX_SIZE)
 
-    lines = _wrap(word, font, CONTENT_WIDTH, 0)
+    lines = wrap(word, face, CONTENT_WIDTH, 0)
 
     assert "".join(lines) == word
-    assert all(_text_width(font, line, 0) <= CONTENT_WIDTH for line in lines)
+    assert all(text_width(face, line, 0) <= CONTENT_WIDTH for line in lines)
 
 
 def test_wrap_keeps_words_whole_while_they_fit() -> None:
-    font = _font(FONT_REGULAR, HINT_MAX_SIZE)
+    face = font(FONT_REGULAR, HINT_MAX_SIZE)
 
-    assert _wrap("его режут на куски", font, CONTENT_WIDTH, 0) == ["его режут на куски"]
+    assert wrap("его режут на куски", face, CONTENT_WIDTH, 0) == ["его режут на куски"]
 
 
 WORDMARK_BAND = (SAFE_MARGIN, CARD_SIZE[1] - 200, CARD_SIZE[0] - SAFE_MARGIN, CARD_SIZE[1] - 60)
@@ -289,7 +288,9 @@ def test_every_card_is_signed_at_the_bottom(
             plate.convert("RGB").crop(WORDMARK_BAND),
         )
 
-    assert band.convert("L").point(lambda level: level > CODEC_TOLERANCE).getbbox() is not None
+    assert (
+        band.convert("L").point(lambda level: level > JPEG_ARTEFACT_TOLERANCE).getbbox() is not None
+    )
 
 
 def test_the_ballot_card_is_drawn_on_the_neutral_background() -> None:

@@ -7,17 +7,17 @@ from aiogram.types import Message
 from aiogram_dialog import DialogManager, StartMode
 
 from undercover.bot.lobby_view import JOIN_PAYLOAD_PREFIX, render_lobby
-from undercover.bot.routers.setup_dialog import Setup
-from undercover.game.engine import CatalogFactory, GameRulesError
-from undercover.game.lobby import join, unique_name
-from undercover.game.models import LobbyPlayer
+from undercover.bot.routers.setup_draft import Setup
+from undercover.game.catalog import CachedCatalog
+from undercover.game.engine import GameRulesError
+from undercover.game.lobby import seat
 from undercover.redis.lobby_state import LobbyRepository
 from undercover.texts import Errors, Lobby, Start
 
 JOIN_PAYLOAD: Final = re.compile(rf"^{JOIN_PAYLOAD_PREFIX}(-?\d+)$")
 
 
-def create_start_router(open_catalog: CatalogFactory) -> Router:
+def create_start_router(catalog: CachedCatalog) -> Router:
     router = Router(name="start")
 
     @router.message(CommandStart(deep_link=True, magic=F.args.regexp(JOIN_PAYLOAD)))
@@ -39,22 +39,14 @@ def create_start_router(open_catalog: CatalogFactory) -> Router:
             await message.answer(Lobby.ALREADY_IN)
             return
 
-        player = LobbyPlayer(
-            user_id=message.from_user.id,
-            name=unique_name(
-                message.from_user.full_name, [member.name for member in lobby.players]
-            ),
-        )
         try:
-            join(lobby, player)
+            seat(lobby, message.from_user.id, message.from_user.full_name)
         except GameRulesError as error:
             await message.answer(str(error))
             return
 
         await message.answer(Lobby.DM_WELCOME)
-        async with open_catalog() as catalog:
-            categories = await catalog.list_playable_categories()
-        await render_lobby(bot, lobbies, lobby, categories)
+        await render_lobby(bot, lobbies, lobby, await catalog.categories())
 
     @router.message(CommandStart())
     async def cmd_start(message: Message, dialog_manager: DialogManager) -> None:

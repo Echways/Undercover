@@ -51,8 +51,9 @@ async def table() -> Table:
     dispatcher = Dispatcher(
         storage=JsonMemoryStorage(), games=FakeGameStateRepository(), lobbies=lobbies
     )
-    dispatcher.include_router(create_start_router(words.open))
-    dispatcher.include_router(create_setup_dialog(words.open, start_reveal))
+    cached = words.cached()
+    dispatcher.include_router(create_start_router(cached))
+    dispatcher.include_router(create_setup_dialog(cached, start_reveal))
     messages = MockMessageManager()
     setup_dialogs(dispatcher, message_manager=messages)
 

@@ -1,6 +1,7 @@
+from collections.abc import Hashable
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Final
+from typing import Annotated, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -49,10 +50,21 @@ class Direction(StrEnum):
     VOTE = "vote"
 
 
-class Ballot(BaseModel):
-    options: list[str] = Field(min_length=1)
-    votes: dict[int, str] = Field(default_factory=dict)
+class Ballot[OptionT: Hashable](BaseModel):
+    options: list[OptionT] = Field(min_length=1)
+    votes: dict[int, OptionT] = Field(default_factory=dict)
+
+
+class DirectionBallot(Ballot[Direction]):
+    kind: Literal["direction"] = "direction"
+
+
+class EliminationBallot(Ballot[int]):
+    kind: Literal["elimination"] = "elimination"
     revote: bool = False
+
+
+AnyBallot = Annotated[DirectionBallot | EliminationBallot, Field(discriminator="kind")]
 
 
 class GameStatus(StrEnum):
@@ -72,31 +84,21 @@ class GameSessionState(BaseModel):
     players: list[PlayerState]
 
     word_id: int
-
     word_text: str
-
     category_ids: list[int] = Field(default_factory=list)
-
     hint_by_spy: dict[int, str] = Field(default_factory=dict)
 
     reveal_cursor: int = Field(default=0, ge=0)
-
     discussion_order: list[int] = Field(default_factory=list)
-
     discussion_cursor: int = Field(default=0, ge=0)
-
     discussion_round: int = Field(default=1, ge=1)
-
     current_message_id: int | None = None
 
     turn_seconds: int = Field(default=0, ge=0)
-
     turn_deadline: datetime | None = None
 
-    ballot: Ballot | None = None
-
+    ballot: AnyBallot | None = None
     winner: Winner | None = None
-
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -118,19 +120,14 @@ class LobbyPlayer(BaseModel):
 class LobbyState(BaseModel):
     chat_id: int
     host_user_id: int
-
     message_id: int | None = None
 
     players: list[LobbyPlayer] = Field(default_factory=list)
-
     spies_count: int = Field(default=1, ge=1)
-
     category_ids: list[int] = Field(default_factory=list)
-
     turn_seconds: int = Field(default=DEFAULT_TURN_SECONDS, ge=0)
 
     view: LobbyView = LobbyView.ROSTER
-
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     def index_of(self, user_id: int) -> int | None:

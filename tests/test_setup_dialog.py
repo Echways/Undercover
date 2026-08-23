@@ -18,11 +18,8 @@ from fake_games import FakeGameStateRepository
 from fake_lobbies import FakeLobbyRepository
 from fake_words import HINTS, WORD, FakeWord, FakeWords, catalog, pizza
 from undercover.bot.routers.reveal import start_reveal
-from undercover.bot.routers.setup_dialog import (
-    MIN_CATEGORIES_TO_CHOOSE,
-    Setup,
-    create_setup_dialog,
-)
+from undercover.bot.routers.setup_dialog import create_setup_dialog
+from undercover.bot.routers.setup_draft import Setup
 from undercover.bot.routers.start import create_start_router
 from undercover.db.repositories.words import CategoryOption, WordsRepository
 from undercover.game.engine import (
@@ -31,6 +28,7 @@ from undercover.game.engine import (
     MIN_PLAYERS,
     Catalog,
     max_spies_count,
+    offers_a_choice,
 )
 from undercover.game.models import GameStatus
 from undercover.game.nicknames import NICKNAMES
@@ -98,8 +96,9 @@ def picky_words() -> FakeWords:
 async def open_table(words: FakeWords) -> Table:
     games = FakeGameStateRepository()
     dispatcher = Dispatcher(storage=JsonMemoryStorage(), games=games, lobbies=FakeLobbyRepository())
-    dispatcher.include_router(create_start_router(words.open))
-    dispatcher.include_router(create_setup_dialog(words.open, start_reveal))
+    cached = words.cached()
+    dispatcher.include_router(create_start_router(cached))
+    dispatcher.include_router(create_setup_dialog(cached, start_reveal))
     messages = MockMessageManager()
     setup_dialogs(dispatcher, message_manager=messages)
 
@@ -145,7 +144,7 @@ async def fill(
     chosen = list(names or NAMES[:players_count])
     for name in chosen:
         await table.send(name)
-    if len(table.words.categories) >= MIN_CATEGORIES_TO_CHOOSE:
+    if offers_a_choice(table.words.categories):
         await table.click(Buttons.CATEGORIES_DONE)
     return chosen
 

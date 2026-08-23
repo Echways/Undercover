@@ -1,8 +1,8 @@
 from typing import Literal
-from urllib.parse import quote
 
 from pydantic import Field, RedisDsn, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy import URL
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
@@ -37,12 +37,14 @@ class Settings(BaseSettings):
 
     @property
     def postgres_dsn(self) -> str:
-        user = quote(self.postgres_user, safe="")
-        password = quote(self.postgres_password.get_secret_value(), safe="")
-        return (
-            f"postgresql+asyncpg://{user}:{password}"
-            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-        )
+        return URL.create(
+            "postgresql+asyncpg",
+            username=self.postgres_user,
+            password=self.postgres_password.get_secret_value(),
+            host=self.postgres_host,
+            port=self.postgres_port,
+            database=self.postgres_db,
+        ).render_as_string(hide_password=False)
 
     @property
     def postgres_target(self) -> str:

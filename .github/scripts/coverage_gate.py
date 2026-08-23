@@ -3,6 +3,7 @@ import argparse
 import os
 import sys
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 from pathlib import Path
 
 BAR_WIDTH = 24
@@ -13,20 +14,42 @@ def bar(rate: float, width: int = BAR_WIDTH) -> str:
     return "█" * filled + "░" * (width - filled)
 
 
-def counters(node: ET.Element) -> tuple[int, int, int, int]:
-    lines_covered = lines_valid = branches_covered = branches_valid = 0
+@dataclass
+class Tally:
+    lines_covered: int = 0
+    lines_valid: int = 0
+    branches_covered: int = 0
+    branches_valid: int = 0
+
+    @property
+    def line_rate(self) -> float:
+        return self.lines_covered / self.lines_valid if self.lines_valid else 0.0
+
+    @property
+    def branch_rate(self) -> float:
+        return self.branches_covered / self.branches_valid if self.branches_valid else 0.0
+
+    def add(self, other: "Tally") -> None:
+        self.lines_covered += other.lines_covered
+        self.lines_valid += other.lines_valid
+        self.branches_covered += other.branches_covered
+        self.branches_valid += other.branches_valid
+
+
+def counters(node: ET.Element) -> Tally:
+    tally = Tally()
     for line in node.iter("line"):
-        lines_valid += 1
+        tally.lines_valid += 1
         if int(line.get("hits", "0")) > 0:
-            lines_covered += 1
+            tally.lines_covered += 1
         if (line.get("branch") or "").lower() != "true":
             continue
         coverage = line.get("condition-coverage", "")
         if "(" in coverage and "/" in coverage:
             covered, valid = coverage.split("(", 1)[1].rstrip(")").split("/")
-            branches_covered += int(covered)
-            branches_valid += int(valid)
-    return lines_covered, lines_valid, branches_covered, branches_valid
+            tally.branches_covered += int(covered)
+            tally.branches_valid += int(valid)
+    return tally
 
 
 def gather(paths: list[str]) -> list[Path]:
@@ -60,20 +83,19 @@ def main() -> int:
         emit(f"## {args.title}: no data\n\n> No coverage report was produced.\n")
         return 1
 
-    packages: dict[str, list[int]] = {}
-    total = [0, 0, 0, 0]
+    packages: dict[str, Tally] = {}
+    total = Tally()
     for file in files:
         for package in ET.parse(file).getroot().iter("package"):
             name = package.get("name") or "."
-            slot = packages.setdefault(
-                "undercover" if name == "." else f"undercover.{name}", [0] * 4
+            counted = counters(package)
+            packages.setdefault("undercover" if name == "." else f"undercover.{name}", Tally()).add(
+                counted
             )
-            for index, value in enumerate(counters(package)):
-                slot[index] += value
-                total[index] += value
+            total.add(counted)
 
-    line_rate = total[0] / total[1] if total[1] else 0.0
-    branch_rate = total[2] / total[3] if total[3] else 0.0
+    line_rate = total.line_rate
+    branch_rate = total.branch_rate
     min_line = args.min_line / 100
     min_branch = args.min_branch / 100
     ok = line_rate >= min_line and branch_rate >= min_branch
@@ -82,27 +104,25 @@ def main() -> int:
         f"## {args.title}: {'passed' if ok else 'failed'}",
         "",
         f"`{bar(line_rate)}` **{line_rate * 100:.1f}%** lines "
-        f"({total[0]}/{total[1]}), floor {args.min_line:.0f}%",
+        f"({total.lines_covered}/{total.lines_valid}), floor {args.min_line:.0f}%",
         "",
         f"`{bar(branch_rate)}` **{branch_rate * 100:.1f}%** branches "
-        f"({total[2]}/{total[3]}), floor {args.min_branch:.0f}%",
+        f"({total.branches_covered}/{total.branches_valid}), floor {args.min_branch:.0f}%",
         "",
         "| Result | Package | Lines | Branches |",
         "|---|---|---:|---:|",
     ]
-    for name, (lines_covered, lines_valid, branches_covered, branches_valid) in sorted(
-        packages.items(), key=lambda item: item[1][0] / max(item[1][1], 1)
-    ):
-        rate = lines_covered / lines_valid if lines_valid else 0.0
+    for name, tally in sorted(packages.items(), key=lambda item: item[1].line_rate):
         branches = (
-            f"{branches_covered / branches_valid * 100:.1f}% "
-            f"<sub>{branches_covered}/{branches_valid}</sub>"
-            if branches_valid
+            f"{tally.branch_rate * 100:.1f}% "
+            f"<sub>{tally.branches_covered}/{tally.branches_valid}</sub>"
+            if tally.branches_valid
             else "—"
         )
         rows.append(
-            f"| {'ok' if rate >= min_line else 'low'} | `{name}` | "
-            f"{rate * 100:.1f}% <sub>{lines_covered}/{lines_valid}</sub> | {branches} |"
+            f"| {'ok' if tally.line_rate >= min_line else 'low'} | `{name}` | "
+            f"{tally.line_rate * 100:.1f}% "
+            f"<sub>{tally.lines_covered}/{tally.lines_valid}</sub> | {branches} |"
         )
     rows.append("")
 

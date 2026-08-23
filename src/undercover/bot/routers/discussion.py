@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from functools import partial
@@ -15,13 +16,19 @@ from undercover.bot.keyboards import button
 from undercover.bot.message_utils import as_photo
 from undercover.bot.routers.reveal import PhaseStarter
 from undercover.bot.turn_clock import OnExpire, Turn, TurnKeeper, TurnView, timed_caption
-from undercover.game.engine import build_discussion_order
-from undercover.game.models import Direction, GameSessionState, GameStatus
-from undercover.game.voting import alive, cast, close_ballot, direction_result, open_ballot, tally
+from undercover.game.engine import build_discussion_order, secure_rng
+from undercover.game.models import Direction, DirectionBallot, GameSessionState, GameStatus
+from undercover.game.voting import (
+    alive,
+    cast_direction,
+    close_ballot,
+    direction_result,
+    open_direction_ballot,
+    tally,
+)
 from undercover.media.card_renderer import CARD_SUFFIX, render_speaker_card
 from undercover.redis.game_state import GameStateRepository
 from undercover.texts import VOTE_REFUSALS, Buttons, Discussion, Errors, Timer, Vote
-from undercover.utils.secure_random import secure_rng
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +46,12 @@ class TalkCB(CallbackData, prefix="talk"):
     action: TalkAction
     session_id: str
     cursor: int
+
+
+DIRECTIONS: Final[Mapping[TalkAction, Direction]] = {
+    TalkAction.ROUND: Direction.ROUND,
+    TalkAction.VOTE: Direction.VOTE,
+}
 
 
 def create_discussion_router(keeper: TurnKeeper, start_voting: PhaseStarter) -> Router:
@@ -86,7 +99,7 @@ def create_discussion_router(keeper: TurnKeeper, start_voting: PhaseStarter) -> 
                 await callback.answer(Errors.STALE_TURN, show_alert=True)
                 return
 
-            refusal = cast(state, callback.from_user.id, Direction(callback_data.action))
+            refusal = cast_direction(state, callback.from_user.id, DIRECTIONS[callback_data.action])
             if refusal is not None:
                 await callback.answer(VOTE_REFUSALS[refusal], show_alert=True)
                 return
@@ -141,7 +154,7 @@ async def open_turn(
     is_last = cursor == len(state.discussion_order) - 1
 
     if is_last:
-        open_ballot(state, [Direction.ROUND, Direction.VOTE])
+        open_direction_ballot(state)
     else:
         close_ballot(state)
 
@@ -237,7 +250,7 @@ async def _expire_turn(
 
 def _direction_tally(state: GameSessionState) -> str:
     ballot = state.ballot
-    if ballot is None or not ballot.votes:
+    if not isinstance(ballot, DirectionBallot) or not ballot.votes:
         return ""
     counts = tally(ballot)
     return "\n" + Vote.DIRECTION_TALLY.format(

@@ -19,6 +19,7 @@ class PhaseBoard(Protocol):
         photo: Photo,
         caption: str,
         keyboard: InlineKeyboardMarkup,
+        /,
     ) -> int: ...
 
     async def revise(
@@ -27,6 +28,7 @@ class PhaseBoard(Protocol):
         state: GameSessionState,
         caption: str,
         keyboard: InlineKeyboardMarkup | None = None,
+        /,
     ) -> None: ...
 
 
@@ -38,6 +40,7 @@ class SingleCardBoard:
         photo: Photo,
         caption: str,
         keyboard: InlineKeyboardMarkup,
+        /,
     ) -> int:
         message = await show_or_advance_card(
             bot, state.chat_id, state.current_message_id, photo, caption, keyboard
@@ -46,10 +49,11 @@ class SingleCardBoard:
 
     async def revise(
         self,
-        bot: Bot,
-        state: GameSessionState,
-        caption: str,
-        keyboard: InlineKeyboardMarkup | None = None,
+        _bot: Bot,
+        _state: GameSessionState,
+        _caption: str,
+        _keyboard: InlineKeyboardMarkup | None = None,
+        /,
     ) -> None:
         return None
 
@@ -62,6 +66,7 @@ class FeedBoard:
         photo: Photo,
         caption: str,
         keyboard: InlineKeyboardMarkup,
+        /,
     ) -> int:
         message = await bot.send_photo(state.chat_id, photo, caption=caption, reply_markup=keyboard)
         return message.message_id
@@ -72,6 +77,7 @@ class FeedBoard:
         state: GameSessionState,
         caption: str,
         keyboard: InlineKeyboardMarkup | None = None,
+        /,
     ) -> None:
         if state.current_message_id is None:
             return

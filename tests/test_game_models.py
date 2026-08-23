@@ -4,8 +4,9 @@ import pytest
 from pydantic import ValidationError
 
 from undercover.game.models import (
-    Ballot,
     Direction,
+    DirectionBallot,
+    EliminationBallot,
     GameMode,
     GameSessionState,
     GameStatus,
@@ -90,27 +91,34 @@ def test_a_player_starts_the_game_alive() -> None:
 
 
 def test_a_fresh_ballot_holds_no_votes() -> None:
-    ballot = Ballot(options=[Direction.ROUND, Direction.VOTE])
+    ballot = DirectionBallot(options=[Direction.ROUND, Direction.VOTE])
 
     assert ballot.votes == {}
-    assert not ballot.revote
+
+
+def test_a_fresh_elimination_ballot_is_not_a_revote() -> None:
+    assert not EliminationBallot(options=[0, 1]).revote
 
 
 def test_a_ballot_without_options_is_refused() -> None:
     with pytest.raises(ValidationError):
-        Ballot(options=[])
+        EliminationBallot(options=[])
 
 
 def test_a_ballot_keeps_a_vote_per_voter() -> None:
-    ballot = Ballot(options=["0", "1"], votes={111: "0", 222: "1"})
+    ballot = EliminationBallot(options=[0, 1], votes={111: 0, 222: 1})
 
-    assert ballot.votes == {111: "0", 222: "1"}
+    assert ballot.votes == {111: 0, 222: 1}
 
 
-def test_directions_are_plain_strings_so_they_fit_a_ballot() -> None:
-    ballot = Ballot(options=[Direction.ROUND, Direction.VOTE])
+def test_an_elimination_ballot_holds_order_indices() -> None:
+    assert EliminationBallot(options=[0, 1]).options == [0, 1]
 
-    assert ballot.options == ["round", "vote"]
+
+def test_a_direction_ballot_holds_directions() -> None:
+    ballot = DirectionBallot(options=[Direction.ROUND, Direction.VOTE])
+
+    assert ballot.options == [Direction.ROUND, Direction.VOTE]
 
 
 def test_a_game_starts_without_a_ballot_and_without_a_winner() -> None:
@@ -129,13 +137,25 @@ def test_a_finished_game_remembers_who_won() -> None:
 def test_a_saved_game_survives_a_round_trip_through_json() -> None:
     state = make_session(
         status=GameStatus.VOTING,
-        ballot=Ballot(options=["0", "1"], votes={111: "0"}, revote=True),
+        ballot=EliminationBallot(options=[0, 1], votes={111: 0}, revote=True),
     )
 
     restored = GameSessionState.model_validate_json(state.model_dump_json())
 
     assert restored.ballot == state.ballot
     assert restored.status is GameStatus.VOTING
+
+
+def test_a_direction_ballot_survives_a_round_trip_through_json() -> None:
+    state = make_session(
+        status=GameStatus.DISCUSSION,
+        ballot=DirectionBallot(options=[Direction.ROUND], votes={111: Direction.ROUND}),
+    )
+
+    restored = GameSessionState.model_validate_json(state.model_dump_json())
+
+    assert isinstance(restored.ballot, DirectionBallot)
+    assert restored.ballot == state.ballot
 
 
 def test_games_saved_before_voting_existed_still_read() -> None:

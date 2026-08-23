@@ -19,9 +19,9 @@ from discussion_harness import (
 )
 from fake_bot import CHAT_ID, HOST_ID
 from fake_words import WORD, pizza
-from undercover.bot.routers.discussion import TalkAction, TalkCB, expiry_handler
+from undercover.bot.routers.discussion import DIRECTIONS, TalkAction, TalkCB, expiry_handler
 from undercover.bot.turn_clock import Turn
-from undercover.game.models import Ballot, Direction, GameMode, GameStatus
+from undercover.game.models import Direction, DirectionBallot, GameMode, GameStatus
 from undercover.texts import BAR_EMPTY, Buttons, Discussion, Errors, Timer, Vote, countdown_line
 
 __all__ = ["log", "table", "words"]
@@ -221,7 +221,7 @@ async def test_a_broken_order_does_not_open_another_round(table: Table) -> None:
             names=("Аня", "Борис"),
             discussion_order=[99, 0],
             discussion_cursor=1,
-            ballot=Ballot(options=[Direction.ROUND, Direction.VOTE]),
+            ballot=DirectionBallot(options=[Direction.ROUND, Direction.VOTE]),
         )
     )
 
@@ -541,5 +541,9 @@ async def test_the_direction_vote_silences_the_clock(table: Table) -> None:
     assert table.keeper.clock.running == frozenset()
 
 
-def test_the_direction_keys_of_the_ballot_match_the_buttons() -> None:
-    assert {action.value for action in TalkAction} >= {direction.value for direction in Direction}
+def test_every_direction_is_reachable_from_a_button() -> None:
+    assert set(DIRECTIONS.values()) == set(Direction)
+
+
+def test_only_the_direction_buttons_cast_a_direction() -> None:
+    assert set(DIRECTIONS) == {TalkAction.ROUND, TalkAction.VOTE}

@@ -1,6 +1,6 @@
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Sequence, Sized
 from contextlib import AbstractAsyncContextManager
-from random import Random
+from random import Random, SystemRandom
 from typing import Final, Protocol
 from uuid import UUID
 
@@ -15,6 +15,7 @@ from undercover.game.models import (
 MIN_PLAYERS: Final = 2
 MAX_PLAYERS: Final = 16
 MAX_NAME_LENGTH: Final = 24
+MIN_CATEGORIES_TO_CHOOSE: Final = 2
 
 
 class GameRulesError(ValueError):
@@ -59,6 +60,14 @@ class Catalog(WordsSource, Protocol):
 
 CatalogFactory = Callable[[], AbstractAsyncContextManager[Catalog]]
 WordsSourceFactory = Callable[[], AbstractAsyncContextManager[WordsSource]]
+
+
+def offers_a_choice(categories: Sized) -> bool:
+    return len(categories) >= MIN_CATEGORIES_TO_CHOOSE
+
+
+def secure_rng() -> Random:
+    return SystemRandom()
 
 
 def max_spies_count(players_count: int) -> int:

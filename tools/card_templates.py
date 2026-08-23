@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter
 
-from undercover.media.card_renderer import (
+from undercover.media.layout import (
     BACKGROUND_NEUTRAL,
     BACKGROUND_UNDERCOVER,
     CARD_SIZE,
@@ -20,7 +20,7 @@ RGB = tuple[int, int, int]
 
 CARD_WIDTH, CARD_HEIGHT = CARD_SIZE
 
-SOURCES_DIR = Path(__file__).resolve().parent.parent / "assets" / "backgrounds"
+SOURCES_DIR = Path(__file__).resolve().parent / "backgrounds"
 
 CONTRAST = 1.16
 SATURATION = 1.08

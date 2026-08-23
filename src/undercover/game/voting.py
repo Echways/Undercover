@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Hashable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -6,6 +6,8 @@ from undercover.game.engine import GameRulesError
 from undercover.game.models import (
     Ballot,
     Direction,
+    DirectionBallot,
+    EliminationBallot,
     GameMode,
     GameSessionState,
     PlayerState,
@@ -22,9 +24,9 @@ class Refusal(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Verdict:
-    counts: dict[str, int]
+    counts: dict[int, int]
     eliminated: int | None = None
-    revote: tuple[str, ...] | None = None
+    revote: tuple[int, ...] | None = None
 
 
 def alive(state: GameSessionState) -> list[PlayerState]:
@@ -37,28 +39,35 @@ def electorate(state: GameSessionState) -> list[int]:
     return [player.user_id for player in alive(state) if player.user_id is not None]
 
 
-def open_ballot(state: GameSessionState, options: Sequence[str], *, revote: bool = False) -> None:
-    state.ballot = Ballot(options=list(options), revote=revote)
+def open_direction_ballot(state: GameSessionState) -> None:
+    state.ballot = DirectionBallot(options=[Direction.ROUND, Direction.VOTE])
+
+
+def open_elimination_ballot(
+    state: GameSessionState, options: Sequence[int], *, revote: bool = False
+) -> None:
+    state.ballot = EliminationBallot(options=list(options), revote=revote)
 
 
 def close_ballot(state: GameSessionState) -> None:
     state.ballot = None
 
 
-def cast(state: GameSessionState, voter_id: int, option: str) -> Refusal | None:
+def cast_direction(state: GameSessionState, voter_id: int, choice: Direction) -> Refusal | None:
     ballot = state.ballot
-    if ballot is None or option not in ballot.options:
+    if not isinstance(ballot, DirectionBallot):
         return Refusal.UNKNOWN_OPTION
-    if voter_id not in electorate(state):
-        return Refusal.IS_OUT if _is_eliminated(state, voter_id) else Refusal.NOT_A_VOTER
-    if voter_id in ballot.votes:
-        return Refusal.ALREADY_VOTED
-
-    ballot.votes[voter_id] = option
-    return None
+    return _record(state, ballot, voter_id, choice)
 
 
-def tally(ballot: Ballot) -> dict[str, int]:
+def cast_elimination(state: GameSessionState, voter_id: int, order_index: int) -> Refusal | None:
+    ballot = state.ballot
+    if not isinstance(ballot, EliminationBallot):
+        return Refusal.UNKNOWN_OPTION
+    return _record(state, ballot, voter_id, order_index)
+
+
+def tally[OptionT: Hashable](ballot: Ballot[OptionT]) -> dict[OptionT, int]:
     counts = dict.fromkeys(ballot.options, 0)
     for option in ballot.votes.values():
         counts[option] += 1
@@ -72,20 +81,20 @@ def turnout(state: GameSessionState) -> tuple[int, int]:
 
 def direction_result(state: GameSessionState) -> Direction | None:
     ballot = state.ballot
-    if ballot is None:
+    if not isinstance(ballot, DirectionBallot):
         return None
 
     given, total = turnout(state)
     majority = total // 2 + 1
     for option, count in tally(ballot).items():
         if count >= majority:
-            return Direction(option)
+            return option
     return Direction.ROUND if given >= total else None
 
 
 def elimination_result(state: GameSessionState) -> Verdict | None:
     ballot = state.ballot
-    if ballot is None:
+    if not isinstance(ballot, EliminationBallot):
         return None
 
     given, total = turnout(state)
@@ -96,7 +105,7 @@ def elimination_result(state: GameSessionState) -> Verdict | None:
     best = max(counts.values())
     leaders = tuple(option for option, count in counts.items() if count == best)
     if len(leaders) == 1:
-        return Verdict(counts=counts, eliminated=int(leaders[0]))
+        return Verdict(counts=counts, eliminated=leaders[0])
     return Verdict(counts=counts) if ballot.revote else Verdict(counts=counts, revote=leaders)
 
 
@@ -120,6 +129,20 @@ def outcome(state: GameSessionState) -> Winner | None:
     if not spies:
         return Winner.CIVILIANS
     return Winner.SPIES if len(spies) >= len(living) - len(spies) else None
+
+
+def _record[OptionT: Hashable](
+    state: GameSessionState, ballot: Ballot[OptionT], voter_id: int, choice: OptionT
+) -> Refusal | None:
+    if choice not in ballot.options:
+        return Refusal.UNKNOWN_OPTION
+    if voter_id not in electorate(state):
+        return Refusal.IS_OUT if _is_eliminated(state, voter_id) else Refusal.NOT_A_VOTER
+    if voter_id in ballot.votes:
+        return Refusal.ALREADY_VOTED
+
+    ballot.votes[voter_id] = choice
+    return None
 
 
 def _is_eliminated(state: GameSessionState, voter_id: int) -> bool:

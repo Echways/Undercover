@@ -9,8 +9,10 @@ __all__ = ["GameSessionState", "GameStateRepository", "GameStatus"]
 
 SESSION_TTL: Final = timedelta(hours=6)
 
-SESSION_KEY_PREFIX: Final = "game:"
-ACTIVE_GAME_KEY_PREFIX: Final = "chat_active_game:"
+STATE_VERSION: Final = "v2"
+
+SESSION_KEY_PREFIX: Final = f"game:{STATE_VERSION}:"
+ACTIVE_GAME_KEY_PREFIX: Final = f"chat_active_game:{STATE_VERSION}:"
 
 
 _RELEASE_ACTIVE_GAME: Final = """

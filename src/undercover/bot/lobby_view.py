@@ -10,15 +10,13 @@ from aiogram.utils.deep_linking import create_start_link
 from undercover.bot.keyboards import button
 from undercover.bot.message_utils import show_or_resend_text
 from undercover.bot.stats_view import StatsAction, StatsCB
-from undercover.game.engine import MAX_PLAYERS, CategoryRecord
+from undercover.game.engine import MAX_PLAYERS, CategoryRecord, offers_a_choice
 from undercover.game.models import LobbyState, LobbyView
 from undercover.redis.lobby_state import LobbyRepository
-from undercover.texts import Buttons, Lobby
-from undercover.texts import Setup as SetupTexts
+from undercover.texts import Buttons, Lobby, chosen_categories_text
 
 JOIN_PAYLOAD_PREFIX: Final = "join_"
 
-MIN_CATEGORIES_TO_CHOOSE: Final = 2
 CATEGORIES_PER_ROW: Final = 2
 
 
@@ -69,7 +67,9 @@ def lobby_text(lobby: LobbyState, categories: Sequence[CategoryRecord]) -> str:
             Lobby.SUMMARY.format(
                 players_count=len(lobby.players),
                 spies_count=lobby.spies_count,
-                chosen_categories=_chosen_categories(lobby, categories),
+                chosen_categories=chosen_categories_text(
+                    item.title for item in categories if item.id in lobby.category_ids
+                ),
             ),
             Lobby.CALL,
         )
@@ -94,11 +94,6 @@ def _roster(lobby: LobbyState) -> str:
     )
 
 
-def _chosen_categories(lobby: LobbyState, categories: Sequence[CategoryRecord]) -> str:
-    chosen = [item.title for item in categories if item.id in lobby.category_ids]
-    return ", ".join(chosen) if chosen else SetupTexts.ALL_CATEGORIES
-
-
 def _roster_keyboard(
     lobby: LobbyState, categories: Sequence[CategoryRecord]
 ) -> InlineKeyboardMarkup:
@@ -106,7 +101,7 @@ def _roster_keyboard(
         _lobby_button(Buttons.SPIES_COUNT.format(count=lobby.spies_count), LobbyAction.SPIES),
         _lobby_button(_turn_label(lobby.turn_seconds), LobbyAction.TURN),
     ]
-    if len(categories) >= MIN_CATEGORIES_TO_CHOOSE:
+    if offers_a_choice(categories):
         settings.append(_lobby_button(Buttons.CHANGE_CATEGORIES, LobbyAction.CATEGORIES))
 
     return InlineKeyboardMarkup(

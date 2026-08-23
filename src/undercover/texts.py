@@ -1,4 +1,4 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Final
 
 from undercover.game.engine import MAX_NAME_LENGTH, MAX_PLAYERS, MIN_PLAYERS
@@ -305,6 +305,10 @@ WIN_LINES: Final[Mapping[Winner, str]] = {
 
 def empty_catalog_text(category_ids: Sequence[int]) -> str:
     return Errors.EMPTY_CATEGORIES if category_ids else Errors.EMPTY_CATALOG
+
+
+def chosen_categories_text(titles: Iterable[str]) -> str:
+    return ", ".join(titles) or Setup.ALL_CATEGORIES
 
 
 def plural(count: int, forms: tuple[str, str, str]) -> str:

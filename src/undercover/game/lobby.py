@@ -18,6 +18,11 @@ def join(lobby: LobbyState, player: LobbyPlayer) -> None:
     lobby.players.append(player)
 
 
+def seat(lobby: LobbyState, user_id: int, full_name: str) -> None:
+    taken = [member.name for member in lobby.players]
+    join(lobby, LobbyPlayer(user_id=user_id, name=unique_name(full_name, taken)))
+
+
 def leave(lobby: LobbyState, user_id: int) -> None:
     index = lobby.index_of(user_id)
     if index is None:

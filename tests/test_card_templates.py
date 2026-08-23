@@ -3,7 +3,7 @@ from pathlib import Path
 from PIL import Image
 
 import card_templates
-from undercover.media.card_renderer import (
+from undercover.media.layout import (
     BACKGROUND_NEUTRAL,
     BACKGROUND_UNDERCOVER,
     CARD_SIZE,

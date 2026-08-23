@@ -25,12 +25,12 @@ from fake_words import WORD, FakeWords, pizza
 from undercover.bot.routers.discussion import create_discussion_router, start_discussion
 from undercover.bot.routers.finale import create_finale_router
 from undercover.bot.routers.reveal import create_reveal_router, start_reveal
-from undercover.bot.routers.setup_dialog import Setup, create_setup_dialog
+from undercover.bot.routers.setup_dialog import create_setup_dialog
+from undercover.bot.routers.setup_draft import Setup
 from undercover.bot.routers.voting import create_voting_router, start_voting
-from undercover.bot.turn_clock import TurnClock, TurnKeeper
+from undercover.bot.turn_clock import KeyedLocks, TurnClock, TurnKeeper
 from undercover.game.models import GameMode, GameSessionState, GameStatus, PlayerState
 from undercover.texts import Buttons
-from undercover.utils.keyed_locks import KeyedLocks
 
 SESSION_ID: Final = "11111111-1111-1111-1111-111111111111"
 IDLE_TICK: Final = timedelta(minutes=1)
@@ -199,7 +199,7 @@ async def table(words: FakeWords, log: RecordingLog) -> AsyncIterator[Table]:
     begin_voting = partial(start_voting, keeper=keeper)
     dispatcher = Dispatcher(storage=JsonMemoryStorage(), games=games)
     dispatcher.include_router(start_router())
-    dispatcher.include_router(create_setup_dialog(words.open, start_reveal))
+    dispatcher.include_router(create_setup_dialog(words.cached(), start_reveal))
     dispatcher.include_router(create_reveal_router(begin_discussion))
     dispatcher.include_router(create_discussion_router(keeper, begin_voting))
     dispatcher.include_router(create_voting_router(keeper, begin_discussion, log))

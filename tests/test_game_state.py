@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -10,6 +11,8 @@ from undercover.redis.game_state import (
     GameSessionState,
     GameStateRepository,
     GameStatus,
+    _active_game_key,
+    _session_key,
 )
 
 pytestmark = pytest.mark.integration
@@ -70,8 +73,8 @@ async def test_save_sets_six_hour_ttl_on_both_keys(redis_client: Redis) -> None:
     await GameStateRepository(redis_client).save(state)
 
     expected = int(SESSION_TTL.total_seconds())
-    session_ttl = await redis_client.ttl(f"game:{state.session_id}")
-    pointer_ttl = await redis_client.ttl(f"chat_active_game:{state.chat_id}")
+    session_ttl = await redis_client.ttl(_session_key(state.session_id))
+    pointer_ttl = await redis_client.ttl(_active_game_key(state.chat_id))
 
     assert expected - 5 <= session_ttl <= expected
     assert expected - 5 <= pointer_ttl <= expected
@@ -112,8 +115,8 @@ async def test_delete_removes_both_keys(redis_client: Redis) -> None:
 
     await repository.delete(state.session_id)
 
-    assert await redis_client.exists(f"game:{state.session_id}") == 0
-    assert await redis_client.exists(f"chat_active_game:{state.chat_id}") == 0
+    assert await redis_client.exists(_session_key(state.session_id)) == 0
+    assert await redis_client.exists(_active_game_key(state.chat_id)) == 0
 
 
 async def test_delete_keeps_pointer_to_newer_game_of_same_chat(redis_client: Redis) -> None:
@@ -133,3 +136,18 @@ async def test_delete_of_unknown_session_is_noop(redis_client: Redis) -> None:
     repository = GameStateRepository(redis_client)
 
     await repository.delete("no-such-session")
+
+
+async def test_a_session_written_before_the_state_version_is_invisible(
+    redis_client: Redis,
+) -> None:
+    repository = GameStateRepository(redis_client)
+    state = make_state()
+    legacy = state.model_dump()
+    legacy["ballot"] = {"options": ["0", "1"], "votes": {"777": "0"}, "revote": False}
+
+    await redis_client.set(f"game:{state.session_id}", json.dumps(legacy, default=str))
+    await redis_client.set(f"chat_active_game:{state.chat_id}", state.session_id)
+
+    assert await repository.load(state.session_id) is None
+    assert await repository.load_active(state.chat_id) is None

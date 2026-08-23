@@ -1,7 +1,7 @@
 import random
 from random import Random
 
-from undercover.utils.secure_random import secure_rng
+from undercover.game.engine import secure_rng
 
 
 def test_is_a_drop_in_replacement_for_random() -> None:

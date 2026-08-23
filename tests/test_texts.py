@@ -5,25 +5,25 @@ from pathlib import Path
 import pytest
 
 import undercover.bot
+import undercover.media
 from undercover import texts
 from undercover.game.models import Winner
 from undercover.game.voting import Refusal
-from undercover.media import card_renderer
 
 BOT_PACKAGE = Path(undercover.bot.__file__).parent
-CARD_RENDERER = Path(card_renderer.__file__)
+MEDIA_PACKAGE = Path(undercover.media.__file__).parent
 
 RUSSIAN = re.compile(r"[А-Яа-яЁё]")
 
+ARROWS = "\u2190-\u21ff"
+GEOMETRIC_SHAPES = "\u25a0-\u25ff"
+DINGBATS = "\u2600-\u27bf"
+MISCELLANEOUS_SYMBOLS = "\u2b00-\u2bff"
+VARIATION_SELECTOR = "\ufe0f"
+EMOJI = "\U0001f000-\U0001faff"
+
 PICTOGRAPH = re.compile(
-    "["
-    "\u2190-\u21ff"  # стрелки
-    "\u25a0-\u25ff"  # геометрические фигуры
-    "\u2600-\u27bf"  # символы и дингбаты
-    "\u2b00-\u2bff"  # прочие стрелки и знаки
-    "\ufe0f"  # селектор эмодзи-начертания
-    "\U0001f000-\U0001faff"  # эмодзи
-    "]"
+    f"[{ARROWS}{GEOMETRIC_SHAPES}{DINGBATS}{MISCELLANEOUS_SYMBOLS}{VARIATION_SELECTOR}{EMOJI}]"
 )
 
 SCREENS = (
@@ -178,8 +178,9 @@ def module_level_russian_constants(source: str) -> list[str]:
     return found
 
 
-def test_the_card_renderer_keeps_no_texts_of_its_own() -> None:
-    found = module_level_russian_constants(CARD_RENDERER.read_text(encoding="utf-8"))
+@pytest.mark.parametrize("module", sorted(MEDIA_PACKAGE.glob("*.py")), ids=lambda path: path.name)
+def test_the_media_package_keeps_no_texts_of_its_own(module: Path) -> None:
+    found = module_level_russian_constants(module.read_text(encoding="utf-8"))
 
     assert found == [], f"подпись карточки мимо texts.py — {found}"
 

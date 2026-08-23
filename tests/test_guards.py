@@ -4,10 +4,16 @@ import pytest
 
 from fake_bot import CHAT_ID, HOST_ID
 from undercover.bot.guards import may_act
-from undercover.game.models import Ballot, GameMode, GameSessionState, GameStatus, PlayerState
+from undercover.game.models import (
+    EliminationBallot,
+    GameMode,
+    GameSessionState,
+    GameStatus,
+    PlayerState,
+)
 
 SESSION_ID: Final = "11111111-1111-1111-1111-111111111111"
-OPEN_BALLOT: Final = Ballot(options=["0", "1"])
+OPEN_BALLOT: Final = EliminationBallot(options=[0, 1])
 SPEAKER_ID: Final = 111
 BYSTANDER_ID: Final = 222
 

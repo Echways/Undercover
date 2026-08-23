@@ -15,19 +15,19 @@ from undercover.bot.message_utils import as_photo
 from undercover.bot.role_delivery import deliver_roles
 from undercover.bot.routers.discussion import TalkAction, TalkCB, report_broken
 from undercover.bot.routers.reveal import PhaseStarter, start_reveal
-from undercover.bot.routers.setup_dialog import Setup
+from undercover.bot.routers.setup_draft import Setup
 from undercover.bot.turn_clock import TurnKeeper
 from undercover.game.engine import (
     EmptyWordCatalogError,
     GameRulesError,
     WordsSourceFactory,
     create_session,
+    secure_rng,
 )
 from undercover.game.models import GameMode, GameSessionState, GameStatus
 from undercover.media.card_renderer import CARD_SUFFIX, render_result_card
 from undercover.redis.game_state import GameStateRepository
 from undercover.texts import WIN_LINES, Buttons, Discussion, Errors, Lobby, empty_catalog_text
-from undercover.utils.secure_random import secure_rng
 
 logger = logging.getLogger(__name__)
 

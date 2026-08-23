@@ -19,14 +19,14 @@ from undercover.bot.routers.setup_dialog import create_setup_dialog
 from undercover.bot.routers.start import create_start_router
 from undercover.bot.routers.stats import create_stats_router
 from undercover.bot.routers.voting import create_voting_router, start_voting
-from undercover.bot.turn_clock import TurnClock, TurnKeeper
+from undercover.bot.turn_clock import KeyedLocks, TurnClock, TurnKeeper
 from undercover.config import Settings
 from undercover.db.repositories.game_log import game_log_writer
 from undercover.db.repositories.stats import stats_source
 from undercover.db.repositories.words import words_source
 from undercover.di import AppDependencies
+from undercover.game.catalog import CachedCatalog
 from undercover.texts import GAME_COMMAND, STATS_COMMAND, Start
-from undercover.utils.keyed_locks import KeyedLocks
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,7 @@ def create_dispatcher(dependencies: AppDependencies) -> Dispatcher:
     dispatcher.callback_query.outer_middleware(throttling)
 
     open_words = words_source(dependencies.sessionmaker)
+    catalog = CachedCatalog(open_words)
     open_stats = stats_source(dependencies.sessionmaker)
     log_game = game_log_writer(dependencies.sessionmaker)
 
@@ -56,10 +57,10 @@ def create_dispatcher(dependencies: AppDependencies) -> Dispatcher:
     begin_discussion = partial(start_discussion, keeper=keeper)
     begin_voting = partial(start_voting, keeper=keeper)
 
-    dispatcher.include_router(create_start_router(open_words))
-    dispatcher.include_router(create_lobby_router(open_words, begin_discussion))
+    dispatcher.include_router(create_start_router(catalog))
+    dispatcher.include_router(create_lobby_router(catalog, begin_discussion))
     dispatcher.include_router(create_stats_router(open_stats))
-    dispatcher.include_router(create_setup_dialog(open_words, start_reveal))
+    dispatcher.include_router(create_setup_dialog(catalog, start_reveal))
     dispatcher.include_router(create_reveal_router(begin_discussion))
     dispatcher.include_router(create_discussion_router(keeper, begin_voting))
     dispatcher.include_router(create_voting_router(keeper, begin_discussion, log_game))

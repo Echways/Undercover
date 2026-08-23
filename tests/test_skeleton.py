@@ -13,7 +13,6 @@ PACKAGES = [
     "undercover.game",
     "undercover.media",
     "undercover.redis",
-    "undercover.utils",
 ]
 
 

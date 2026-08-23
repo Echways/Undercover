@@ -14,14 +14,21 @@ from undercover.bot.message_utils import as_photo
 from undercover.bot.routers.finale import FinalAction, FinalCB, GameLogWriter, write_log
 from undercover.bot.routers.reveal import PhaseStarter
 from undercover.bot.turn_clock import TurnKeeper
-from undercover.game.models import GameMode, GameSessionState, GameStatus, PlayerState, Winner
+from undercover.game.models import (
+    EliminationBallot,
+    GameMode,
+    GameSessionState,
+    GameStatus,
+    PlayerState,
+    Winner,
+)
 from undercover.game.voting import (
     alive,
-    cast,
+    cast_elimination,
     close_ballot,
     eliminate,
     elimination_result,
-    open_ballot,
+    open_elimination_ballot,
     outcome,
     turnout,
 )
@@ -31,7 +38,6 @@ from undercover.texts import VOTE_REFUSALS, WIN_LINES, Buttons, Vote
 
 
 class VoteAction(StrEnum):
-    PICK = "pick"
     BACK = "back"
     CONTINUE = "continue"
 
@@ -39,7 +45,11 @@ class VoteAction(StrEnum):
 class VoteCB(CallbackData, prefix="vote"):
     action: VoteAction
     session_id: str
-    option: str = ""
+
+
+class PickCB(CallbackData, prefix="pick"):
+    session_id: str
+    order_index: int
 
 
 def create_voting_router(
@@ -52,10 +62,10 @@ def create_voting_router(
         state.discussion_round += 1
         await start_discussion(bot, games, state)
 
-    @router.callback_query(VoteCB.filter(F.action == VoteAction.PICK))
+    @router.callback_query(PickCB.filter())
     async def cb_pick(
         callback: CallbackQuery,
-        callback_data: VoteCB,
+        callback_data: PickCB,
         games: GameStateRepository,
         bot: Bot,
     ) -> None:
@@ -64,7 +74,7 @@ def create_voting_router(
             if state is None:
                 return
 
-            refusal = cast(state, callback.from_user.id, callback_data.option)
+            refusal = cast_elimination(state, callback.from_user.id, callback_data.order_index)
             if refusal is not None:
                 await callback.answer(VOTE_REFUSALS[refusal], show_alert=True)
                 return
@@ -77,7 +87,7 @@ def create_voting_router(
                 return
 
             if verdict.revote is not None:
-                open_ballot(state, verdict.revote, revote=True)
+                open_elimination_ballot(state, verdict.revote, revote=True)
                 await games.save(state)
                 await _repaint(bot, state, Vote.TIE)
                 await callback.answer(Vote.TIE, show_alert=True)
@@ -131,7 +141,7 @@ async def start_voting(
 ) -> None:
     keeper.clock.stop(state.session_id)
     state.status = GameStatus.VOTING
-    open_ballot(state, [str(player.order_index) for player in alive(state)])
+    open_elimination_ballot(state, [player.order_index for player in alive(state)])
 
     image = await asyncio.to_thread(render_ballot_card)
     state.current_message_id = await board_for(state).show(
@@ -150,7 +160,7 @@ async def _announce(
     log_game: GameLogWriter,
     state: GameSessionState,
     order_index: int,
-    counts: Mapping[str, int],
+    counts: Mapping[int, int],
 ) -> None:
     player = eliminate(state, order_index)
     winner = outcome(state)
@@ -186,7 +196,7 @@ def _ballot_caption(state: GameSessionState) -> str:
 def _verdict_caption(
     state: GameSessionState,
     player: PlayerState,
-    counts: Mapping[str, int],
+    counts: Mapping[int, int],
     winner: Winner | None,
 ) -> str:
     lines = [
@@ -194,8 +204,8 @@ def _verdict_caption(
     ]
     if state.mode is GameMode.GROUP:
         lines.extend(
-            Vote.TALLY_LINE.format(name=state.players[int(option)].name, votes=votes)
-            for option, votes in sorted(counts.items(), key=lambda pair: -pair[1])
+            Vote.TALLY_LINE.format(name=state.players[order_index].name, votes=votes)
+            for order_index, votes in sorted(counts.items(), key=lambda pair: -pair[1])
         )
     if winner is not None:
         lines.append(WIN_LINES[winner])
@@ -204,9 +214,9 @@ def _verdict_caption(
 
 def _ballot_keyboard(state: GameSessionState) -> InlineKeyboardMarkup:
     ballot = state.ballot
-    options = tuple(ballot.options) if ballot is not None else ()
+    options = tuple(ballot.options) if isinstance(ballot, EliminationBallot) else ()
     rows = [
-        [_pick_button(state, option) for option in pair]
+        [_pick_button(state, order_index) for order_index in pair]
         for pair in batched(options, 2, strict=False)
     ]
     rows.append(
@@ -227,8 +237,8 @@ def _verdict_keyboard(state: GameSessionState, winner: Winner | None) -> InlineK
     )
 
 
-def _pick_button(state: GameSessionState, option: str) -> InlineKeyboardButton:
+def _pick_button(state: GameSessionState, order_index: int) -> InlineKeyboardButton:
     return button(
-        state.players[int(option)].name,
-        VoteCB(action=VoteAction.PICK, session_id=state.session_id, option=option),
+        state.players[order_index].name,
+        PickCB(session_id=state.session_id, order_index=order_index),
     )

@@ -76,7 +76,6 @@ ignore = ["ANN401", "E501", "RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.lint.per-file-ignores]
 ".github/scripts/*" = ["S314"]
-"src/undercover/bot/boards.py" = ["ARG002"]
 "tests/*" = ["ARG", "ASYNC109", "S"]
 
 [tool.ruff.lint.isort]

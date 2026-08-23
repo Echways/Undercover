@@ -15,7 +15,7 @@ from discussion_harness import (
     words,
 )
 from undercover.bot.routers.discussion import start_discussion
-from undercover.game.models import GameStatus, Winner
+from undercover.game.models import EliminationBallot, GameStatus, Winner
 from undercover.texts import Buttons, Errors, Vote
 
 __all__ = ["log", "table", "words"]
@@ -30,7 +30,7 @@ async def test_the_screen_offers_every_living_player(table: Table) -> None:
 
     assert set(table.card.texts) == {*NAMES, Buttons.BACK_TO_TALK}
     assert state.ballot is not None
-    assert state.ballot.options == ["0", "1", "2", "3"]
+    assert state.ballot.options == [0, 1, 2, 3]
 
 
 async def test_the_hot_seat_screen_asks_the_host_for_the_result(table: Table) -> None:
@@ -202,7 +202,7 @@ async def test_a_tie_sends_only_the_leaders_to_a_second_ballot(table: Table) -> 
     await table.tap(two, user_id=44)
 
     ballot = table.games.stored.ballot
-    assert ballot is not None
+    assert isinstance(ballot, EliminationBallot)
     assert ballot.revote
     assert ballot.votes == {}
     assert Vote.TIE in table.alerts

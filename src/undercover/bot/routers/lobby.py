@@ -1,5 +1,4 @@
 import logging
-from collections.abc import Sequence
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramForbiddenError
@@ -11,36 +10,34 @@ from undercover.bot.lobby_view import LobbyAction, LobbyCB, join_link, render_lo
 from undercover.bot.message_utils import show_or_resend_text
 from undercover.bot.role_delivery import deliver_roles
 from undercover.bot.routers.reveal import PhaseStarter
+from undercover.game.catalog import CachedCatalog
 from undercover.game.engine import (
-    CatalogFactory,
-    CategoryRecord,
     EmptyWordCatalogError,
     GameRulesError,
     create_session,
+    secure_rng,
 )
 from undercover.game.lobby import (
     cycle_spies_count,
     cycle_turn_seconds,
     ensure_playable,
-    join,
     leave,
+    seat,
     toggle_category,
-    unique_name,
 )
-from undercover.game.models import GameMode, LobbyPlayer, LobbyState, LobbyView
+from undercover.game.models import GameMode, LobbyState, LobbyView
 from undercover.redis.game_state import GameStateRepository
 from undercover.redis.lobby_state import LobbyRepository
 from undercover.texts import GAME_COMMAND, Errors, Lobby, empty_catalog_text
-from undercover.utils.secure_random import secure_rng
 
 logger = logging.getLogger(__name__)
 
 
-def create_lobby_router(open_catalog: CatalogFactory, start_discussion: PhaseStarter) -> Router:
+def create_lobby_router(catalog: CachedCatalog, start_discussion: PhaseStarter) -> Router:
     router = Router(name="lobby")
 
     async def redraw(bot: Bot, lobbies: LobbyRepository, lobby: LobbyState) -> None:
-        await render_lobby(bot, lobbies, lobby, await _categories(open_catalog))
+        await render_lobby(bot, lobbies, lobby, await catalog.categories())
 
     @router.message(Command(GAME_COMMAND), IN_GROUP)
     async def cmd_game(
@@ -73,14 +70,8 @@ def create_lobby_router(open_catalog: CatalogFactory, start_discussion: PhaseSta
         if not await _ping_direct_chat(bot, callback, lobby.chat_id):
             return
 
-        player = LobbyPlayer(
-            user_id=callback.from_user.id,
-            name=unique_name(
-                callback.from_user.full_name, [member.name for member in lobby.players]
-            ),
-        )
         try:
-            join(lobby, player)
+            seat(lobby, callback.from_user.id, callback.from_user.full_name)
         except GameRulesError as error:
             await callback.answer(str(error), show_alert=True)
             return
@@ -174,7 +165,7 @@ def create_lobby_router(open_catalog: CatalogFactory, start_discussion: PhaseSta
             return
 
         try:
-            async with open_catalog() as words:
+            async with catalog.open() as words:
                 state = await create_session(
                     chat_id=lobby.chat_id,
                     host_user_id=lobby.host_user_id,
@@ -209,11 +200,6 @@ def create_lobby_router(open_catalog: CatalogFactory, start_discussion: PhaseSta
         await callback.answer()
 
     return router
-
-
-async def _categories(open_catalog: CatalogFactory) -> Sequence[CategoryRecord]:
-    async with open_catalog() as catalog:
-        return await catalog.list_playable_categories()
 
 
 async def _open_lobby(callback: CallbackQuery, lobbies: LobbyRepository) -> LobbyState | None:

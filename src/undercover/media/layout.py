@@ -1,0 +1,76 @@
+from pathlib import Path
+from typing import Final
+
+RGB = tuple[int, int, int]
+RGBA = tuple[int, int, int, int]
+Ink = RGB | RGBA
+
+CARD_SIZE: Final[tuple[int, int]] = (1080, 1350)
+CARD_WIDTH, CARD_HEIGHT = CARD_SIZE
+
+CARD_FORMAT: Final = "JPEG"
+CARD_SUFFIX: Final = "jpg"
+CARD_QUALITY: Final = 92
+
+TEMPLATES_DIR: Final[Path] = Path(__file__).parent / "templates"
+
+BACKGROUND_NEUTRAL: Final = "bg_neutral.jpg"
+BACKGROUND_UNDERCOVER: Final = "bg_undercover.jpg"
+
+FONT_REGULAR: Final = "regular.ttf"
+FONT_BOLD: Final = "bold.otf"
+
+SAFE_MARGIN: Final = 96
+GLOW_BLEED: Final = 32
+CONTENT_WIDTH: Final = CARD_WIDTH - 2 * (SAFE_MARGIN + GLOW_BLEED)
+LAMP_CENTER: Final = round(CARD_HEIGHT * 0.46)
+
+INK: Final[RGB] = (247, 248, 252)
+INK_MUTED: Final[RGB] = (152, 172, 208)
+INK_MUTED_WARM: Final[RGB] = (214, 156, 158)
+
+GLOW_COLD: Final[RGB] = (74, 122, 194)
+GLOW_WARM: Final[RGB] = (186, 58, 60)
+
+SHADOW_COLOR: Final[RGB] = (0, 0, 0)
+SHADOW_BLUR: Final = 8.0
+SHADOW_OFFSET: Final[tuple[int, int]] = (0, 5)
+SHADOW_OPACITY: Final = 0.85
+
+GLOW_BLUR: Final = 7.0
+GLOW_OPACITY: Final = 0.45
+
+CAPTION_SIZE: Final = 36
+CAPTION_TRACKING: Final = 11
+CAPTION_RULE_LENGTH: Final = 64
+CAPTION_RULE_GAP: Final = 26
+CAPTION_RULE_WIDTH: Final = 2
+
+OWNER_SIZE: Final = 50
+FOOTNOTE_SIZE: Final = 32
+
+STAMP_TEXT_SIZE: Final = 60
+STAMP_TRACKING: Final = 10
+STAMP_PADDING_X: Final = 46
+STAMP_PADDING_Y: Final = 24
+STAMP_ANGLE: Final = 3.0
+STAMP_BORDER: Final = 5
+STAMP_INSET: Final = 10
+STAMP_INNER_BORDER: Final = 2
+STAMP_SUPERSAMPLE: Final = 2
+STAMP_INK: Final[RGBA] = (255, 244, 245, 236)
+STAMP_FILL: Final[RGBA] = (28, 6, 10, 104)
+
+WORDMARK_SIZE: Final = 26
+WORDMARK_TRACKING: Final = 16
+WORDMARK_INK: Final[RGBA] = (238, 240, 248, 120)
+
+HEADLINE_MAX_SIZE: Final = 120
+HEADLINE_MIN_SIZE: Final = 52
+HEADLINE_MAX_LINES: Final = 2
+
+HINT_MAX_SIZE: Final = 56
+HINT_MIN_SIZE: Final = 32
+HINT_MAX_LINES: Final = 4
+
+RESULT_WORD_MAX_LINES: Final = 2

@@ -2,6 +2,8 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
+from undercover.game.catalog import CachedCatalog
+
 WORD = "пицца"
 HINTS = ("её режут на куски", "её заказывают домой")
 
@@ -49,6 +51,9 @@ class FakeWords:
             yield self
         finally:
             self.closed += 1
+
+    def cached(self) -> CachedCatalog:
+        return CachedCatalog(self.open)
 
 
 def pizza() -> FakeWord:

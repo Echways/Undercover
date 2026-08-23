@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from undercover.utils.keyed_locks import KeyedLocks
+from undercover.bot.turn_clock import KeyedLocks
 
 
 async def test_the_same_key_runs_one_at_a_time() -> None:
