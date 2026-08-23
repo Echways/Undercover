@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from aiogram import Bot, F, Router
@@ -25,14 +26,24 @@ from undercover.game.engine import (
     secure_rng,
 )
 from undercover.game.models import GameMode, GameSessionState, GameStatus
+from undercover.game.summary import summarize
 from undercover.game.voting import misfired
-from undercover.media.card_renderer import CARD_SUFFIX, render_result_card
+from undercover.media.card_renderer import CARD_SUFFIX
+from undercover.media.summary_card import render_summary_card
 from undercover.redis.game_state import GameStateRepository
-from undercover.texts import Buttons, Discussion, Errors, Lobby, empty_catalog_text, win_line
+from undercover.texts import (
+    Buttons,
+    Cards,
+    Discussion,
+    Errors,
+    Lobby,
+    empty_catalog_text,
+    win_line,
+)
 
 logger = logging.getLogger(__name__)
 
-GameLogWriter = Callable[[GameSessionState], Awaitable[None]]
+GameLogWriter = Callable[[GameSessionState], Awaitable[int]]
 
 
 class FinalAction(StrEnum):
@@ -71,8 +82,9 @@ def create_finale_router(
                 await report_broken(callback, state, "в партии нет ни одного шпиона")
                 return
 
+            state.status = GameStatus.FINISHED
+            await close_case(log_game, state)
             await show_final(bot, games, state)
-            await write_log(log_game, state)
             await callback.answer()
 
     @router.callback_query(FinalCB.filter(F.action == FinalAction.RESULT))
@@ -159,12 +171,12 @@ def create_finale_router(
 
 async def show_final(bot: Bot, games: GameStateRepository, state: GameSessionState) -> None:
     spies = [player.name for player in state.players if player.is_spy]
-    image = await asyncio.to_thread(render_result_card, spies, state.word_text, state.winner)
+    image = await asyncio.to_thread(render_summary_card, summarize(state), await _promo(bot))
 
     state.current_message_id = await board_for(state).show(
         bot,
         state,
-        as_photo(image, f"result.{CARD_SUFFIX}"),
+        as_photo(image, f"summary.{CARD_SUFFIX}"),
         _final_caption(state, spies),
         _final_keyboard(state),
     )
@@ -172,11 +184,18 @@ async def show_final(bot: Bot, games: GameStateRepository, state: GameSessionSta
     await games.save(state)
 
 
-async def write_log(log_game: GameLogWriter, state: GameSessionState) -> None:
+async def close_case(log_game: GameLogWriter, state: GameSessionState) -> None:
+    if state.finished_at is None:
+        state.finished_at = datetime.now(UTC)
     try:
-        await log_game(state)
+        state.case_number = await log_game(state)
     except Exception:
         logger.exception("партия %s: не записалась в журнал", state.session_id)
+
+
+async def _promo(bot: Bot) -> str | None:
+    username = (await bot.me()).username
+    return Cards.PROMO.format(username=username) if username else None
 
 
 def _final_caption(state: GameSessionState, spies: Sequence[str]) -> str:

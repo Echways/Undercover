@@ -218,3 +218,28 @@ async def test_writer_commits_the_record(
     async with sessionmaker() as session:
         (row,) = await stored_rows(session)
         assert row.word_id == word_id
+
+
+async def test_the_journal_numbers_the_games_of_one_chat(db_session: AsyncSession) -> None:
+    word = await add_word(db_session)
+    repository = GameLogRepository(db_session)
+
+    numbers = [
+        await repository.record_finished(make_state(word.id, winner=Winner.CIVILIANS)),
+        await repository.record_finished(make_state(word.id, winner=Winner.SPIES)),
+        await repository.record_finished(make_state(word.id, winner=None)),
+    ]
+
+    assert numbers == [1, 2, 3]
+
+
+async def test_every_chat_counts_its_own_games(db_session: AsyncSession) -> None:
+    word = await add_word(db_session)
+    repository = GameLogRepository(db_session)
+
+    await repository.record_finished(make_state(word.id, winner=Winner.CIVILIANS))
+    other = await repository.record_finished(
+        make_state(word.id, chat_id=CHAT_ID - 1, winner=Winner.SPIES)
+    )
+
+    assert other == 1

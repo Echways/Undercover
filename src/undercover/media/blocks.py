@@ -169,10 +169,10 @@ class StampBlock:
         return plate
 
 
-def caption(text: str, color: Ink, space_before: int = 0) -> CaptionBlock:
+def caption(text: str, color: Ink, space_before: int = 0, size: int = CAPTION_SIZE) -> CaptionBlock:
     return CaptionBlock(
         text=text,
-        font=font(FONT_BOLD, CAPTION_SIZE),
+        font=font(FONT_BOLD, size),
         color=color,
         space_before=space_before,
     )
@@ -183,10 +183,10 @@ def owner(name: str, color: Ink) -> TextBlock:
     return TextBlock(lines=lines, font=face, color=color)
 
 
-def footnote(text: str, color: Ink, space_before: int) -> TextBlock:
+def footnote(text: str, color: Ink, space_before: int, size: int = FOOTNOTE_SIZE) -> TextBlock:
     return TextBlock(
         lines=(text,),
-        font=font(FONT_REGULAR, FOOTNOTE_SIZE),
+        font=font(FONT_REGULAR, size),
         color=color,
         space_before=space_before,
     )

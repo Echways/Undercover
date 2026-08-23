@@ -321,3 +321,34 @@ async def test_the_result_screen_is_dead_while_the_game_is_on(table: Table) -> N
     await table.tap(FinalCB(action=FinalAction.RESULT, session_id=SESSION_ID).pack())
 
     assert Discussion.GAME_IS_ON in table.alerts
+
+
+async def test_the_case_number_comes_from_the_journal(table: Table) -> None:
+    await finished(table)
+
+    assert table.games.stored.case_number == 1
+
+
+async def test_the_game_is_stamped_with_the_moment_it_ended(table: Table) -> None:
+    await finished(table)
+
+    assert table.games.stored.finished_at is not None
+
+
+async def test_the_case_number_survives_a_second_look(table: Table) -> None:
+    await finished(table)
+    stamped = table.games.stored.finished_at
+
+    await table.tap(FinalCB(action=FinalAction.RESULT, session_id=SESSION_ID).pack())
+
+    assert table.games.stored.case_number == 1
+    assert table.games.stored.finished_at == stamped
+
+
+async def test_a_broken_journal_leaves_the_case_without_a_number(table: Table) -> None:
+    table.log.failure = RuntimeError("журнал недоступен")
+
+    await finished(table)
+
+    assert table.games.stored.case_number is None
+    assert table.games.stored.status is GameStatus.FINISHED
