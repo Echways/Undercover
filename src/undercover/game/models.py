@@ -105,7 +105,9 @@ class GameSessionState(BaseModel):
 
     ballot: AnyBallot | None = None
     winner: Winner | None = None
+    case_number: int | None = Field(default=None, gt=0)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    finished_at: datetime | None = None
 
 
 DEFAULT_TURN_SECONDS: Final = 45
