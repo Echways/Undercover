@@ -8,6 +8,14 @@ from PIL import ImageDraw, ImageFont
 from undercover.media.layout import CONTENT_WIDTH, TEMPLATES_DIR, Ink
 
 HYPHEN_BREAK: Final = re.compile(r"(?<=-)")
+ELLIPSIS: Final = "…"
+
+
+def plain(value: str, field: str) -> str:
+    text = " ".join(value.split())
+    if not text:
+        raise ValueError(f"{field} не может быть пустым")
+    return text
 
 
 @cache
@@ -58,6 +66,12 @@ def wrap(text: str, face: ImageFont.FreeTypeFont, max_width: float, tracking: in
     if current:
         lines.append(current)
     return lines
+
+
+def shorten(text: str, face: ImageFont.FreeTypeFont, max_width: float, tracking: int) -> str:
+    if text_width(face, text, tracking) <= max_width:
+        return text
+    return _tailed(text, face, max_width, tracking)
 
 
 def fit(
@@ -118,6 +132,13 @@ def _split_word(
         yield from _split_word(chunk, face, max_width, tracking)
 
 
+def _tailed(text: str, face: ImageFont.FreeTypeFont, max_width: float, tracking: int) -> str:
+    kept = text
+    while kept and text_width(face, kept + ELLIPSIS, tracking) > max_width:
+        kept = kept[:-1]
+    return kept + ELLIPSIS
+
+
 def _ellipsized(
     lines: Sequence[str],
     max_lines: int,
@@ -129,8 +150,5 @@ def _ellipsized(
         return tuple(lines)
 
     kept = list(lines[:max_lines])
-    last = kept[-1]
-    while last and text_width(face, f"{last}…", tracking) > max_width:
-        last = last[:-1]
-    kept[-1] = f"{last}…"
+    kept[-1] = _tailed(kept[-1], face, max_width, tracking)
     return tuple(kept)

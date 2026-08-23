@@ -19,7 +19,7 @@ from undercover.media.layout import (
     INK_MUTED_WARM,
     RESULT_WORD_MAX_LINES,
 )
-from undercover.media.typography import fit
+from undercover.media.typography import fit, plain
 from undercover.texts import WIN_CAPTIONS, Cards
 
 __all__ = [
@@ -35,7 +35,7 @@ __all__ = [
 
 
 def render_hidden_card(name: str) -> bytes:
-    player = _clean(name, "имя игрока")
+    player = plain(name, "имя игрока")
     return render(
         BACKGROUND_NEUTRAL,
         GLOW_COLD,
@@ -48,8 +48,8 @@ def render_hidden_card(name: str) -> bytes:
 
 
 def render_civilian_card(name: str, word: str) -> bytes:
-    player = _clean(name, "имя игрока")
-    secret = _clean(word, "слово")
+    player = plain(name, "имя игрока")
+    secret = plain(word, "слово")
     return render(
         BACKGROUND_NEUTRAL,
         GLOW_COLD,
@@ -63,8 +63,8 @@ def render_civilian_card(name: str, word: str) -> bytes:
 
 
 def render_spy_card(name: str, hint: str) -> bytes:
-    player = _clean(name, "имя игрока")
-    clue = _clean(hint, "подсказка")
+    player = plain(name, "имя игрока")
+    clue = plain(hint, "подсказка")
     hint_font, hint_lines = fit(
         clue,
         FONT_REGULAR,
@@ -92,7 +92,7 @@ def render_spy_card(name: str, hint: str) -> bytes:
 
 
 def render_speaker_card(name: str) -> bytes:
-    player = _clean(name, "имя игрока")
+    player = plain(name, "имя игрока")
     return render(
         BACKGROUND_NEUTRAL,
         GLOW_COLD,
@@ -117,7 +117,7 @@ def render_ballot_card() -> bytes:
 
 
 def render_verdict_card(name: str, is_spy: bool) -> bytes:
-    player = _clean(name, "имя игрока")
+    player = plain(name, "имя игрока")
     ink = INK_MUTED_WARM if is_spy else INK_MUTED
     return render(
         BACKGROUND_UNDERCOVER if is_spy else BACKGROUND_NEUTRAL,
@@ -134,8 +134,8 @@ def render_result_card(spy_names: Sequence[str], word: str, winner: Winner | Non
     if not spy_names:
         raise ValueError("список шпионов не может быть пустым")
 
-    spies = ", ".join(_clean(name, "имя шпиона") for name in spy_names)
-    secret = _clean(word, "слово")
+    spies = ", ".join(plain(name, "имя шпиона") for name in spy_names)
+    secret = plain(word, "слово")
     word_font, word_lines = fit(
         secret,
         FONT_BOLD,
@@ -165,10 +165,3 @@ def render_result_card(spy_names: Sequence[str], word: str, winner: Winner | Non
             ),
         ),
     )
-
-
-def _clean(value: str, field: str) -> str:
-    text = " ".join(value.split())
-    if not text:
-        raise ValueError(f"{field} не может быть пустым")
-    return text

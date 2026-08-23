@@ -28,7 +28,7 @@ from undercover.media.layout import (
     SAFE_MARGIN,
     TEMPLATES_DIR,
 )
-from undercover.media.typography import font, text_width, wrap
+from undercover.media.typography import font, plain, shorten, text_width, wrap
 
 RENDERERS: tuple[Callable[..., bytes], ...] = (
     render_hidden_card,
@@ -260,6 +260,38 @@ def test_wrap_keeps_words_whole_while_they_fit() -> None:
     face = font(FONT_REGULAR, HINT_MAX_SIZE)
 
     assert wrap("его режут на куски", face, CONTENT_WIDTH, 0) == ["его режут на куски"]
+
+
+def test_shorten_keeps_a_line_that_already_fits() -> None:
+    face = font(FONT_REGULAR, HINT_MAX_SIZE)
+
+    assert shorten("Аня", face, CONTENT_WIDTH, 0) == "Аня"
+
+
+def test_shorten_cuts_a_long_line_down_to_the_width() -> None:
+    face = font(FONT_BOLD, HEADLINE_MAX_SIZE)
+
+    result = shorten("Аполлинария" * 5, face, CONTENT_WIDTH, 0)
+
+    assert result.endswith("…")
+    assert text_width(face, result, 0) <= CONTENT_WIDTH
+
+
+def test_shorten_counts_tracking_in_the_width() -> None:
+    face = font(FONT_BOLD, HEADLINE_MAX_SIZE)
+
+    tracked = shorten("Аполлинария" * 5, face, CONTENT_WIDTH, 12)
+
+    assert text_width(face, tracked, 12) <= CONTENT_WIDTH
+
+
+def test_plain_squeezes_the_whitespace_out() -> None:
+    assert plain("  Аня \n\tПетровна ", "имя игрока") == "Аня Петровна"
+
+
+def test_plain_rejects_a_blank_value_and_names_the_field() -> None:
+    with pytest.raises(ValueError, match="имя игрока"):
+        plain("  \n ", "имя игрока")
 
 
 WORDMARK_BAND = (SAFE_MARGIN, CARD_SIZE[1] - 200, CARD_SIZE[0] - SAFE_MARGIN, CARD_SIZE[1] - 60)
