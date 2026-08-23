@@ -15,7 +15,7 @@ from discussion_harness import (
 from fake_bot import CHAT_ID
 from fake_words import WORD, pizza
 from undercover.bot.routers.finale import FinalAction, FinalCB
-from undercover.game.models import GameMode, GameStatus, Winner
+from undercover.game.models import GameMode, GameStatus, Ruleset, Winner
 from undercover.texts import Buttons, Discussion, Errors, Lobby, Vote
 from undercover.texts import Setup as SetupTexts
 
@@ -118,6 +118,14 @@ async def test_play_again_keeps_the_roster_and_deals_a_fresh_game(table: Table) 
     assert fresh.status is GameStatus.REVEAL
     assert fresh.reveal_cursor == 0
     assert fresh.discussion_order == []
+
+
+async def test_play_again_keeps_the_ruleset_the_table_agreed_on(table: Table) -> None:
+    await finished(table, ruleset=Ruleset.SUDDEN_DEATH)
+
+    await table.press(Buttons.PLAY_AGAIN)
+
+    assert table.games.stored.ruleset is Ruleset.SUDDEN_DEATH
 
 
 async def test_play_again_keeps_the_chosen_categories(table: Table) -> None:

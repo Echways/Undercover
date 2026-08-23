@@ -7,7 +7,7 @@ from undercover.game.engine import (
     GameRulesError,
     max_spies_count,
 )
-from undercover.game.models import TURN_CHOICES, LobbyPlayer, LobbyState
+from undercover.game.models import TURN_CHOICES, LobbyPlayer, LobbyState, Ruleset
 
 
 def join(lobby: LobbyState, player: LobbyPlayer) -> None:
@@ -40,6 +40,10 @@ def cycle_turn_seconds(lobby: LobbyState) -> None:
         TURN_CHOICES.index(lobby.turn_seconds) + 1 if lobby.turn_seconds in TURN_CHOICES else 0
     )
     lobby.turn_seconds = TURN_CHOICES[position % len(TURN_CHOICES)]
+
+
+def toggle_ruleset(lobby: LobbyState) -> None:
+    lobby.ruleset = Ruleset.SUDDEN_DEATH if lobby.ruleset is Ruleset.CLASSIC else Ruleset.CLASSIC
 
 
 def toggle_category(lobby: LobbyState, category_id: int) -> None:

@@ -17,7 +17,7 @@ from undercover.bot.routers.reveal import start_reveal
 from undercover.bot.routers.setup_dialog import create_setup_dialog
 from undercover.bot.routers.start import create_start_router
 from undercover.game.models import LobbyState
-from undercover.texts import Errors, Lobby, Start
+from undercover.texts import Errors, Lobby, Rules, Start
 from undercover.texts import Setup as SetupTexts
 
 PLAYERS_COUNT: Final = "4"
@@ -155,6 +155,13 @@ async def test_a_deep_link_with_junk_does_not_reach_the_lobby_handler(table: Tab
 
     assert table.lobbies.stored.players == []
     assert Start.GREETING in table.greetings
+
+
+async def test_a_deep_link_from_the_rules_button_answers_with_the_rules(table: Table) -> None:
+    await deep_link_start(table, "rules")
+
+    assert Rules.FULL in table.greetings
+    assert table.lobbies.stored.players == []
 
 
 async def test_a_plain_start_still_opens_the_hot_seat_setup(table: Table) -> None:

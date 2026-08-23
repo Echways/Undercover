@@ -6,7 +6,13 @@ from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
 from undercover.bot.filters import IN_GROUP
-from undercover.bot.lobby_view import LobbyAction, LobbyCB, join_link, render_lobby
+from undercover.bot.lobby_view import (
+    LobbyAction,
+    LobbyCB,
+    join_link,
+    render_lobby,
+    rules_link,
+)
 from undercover.bot.message_utils import show_or_resend_text
 from undercover.bot.role_delivery import deliver_roles
 from undercover.bot.routers.reveal import PhaseStarter
@@ -24,11 +30,12 @@ from undercover.game.lobby import (
     leave,
     seat,
     toggle_category,
+    toggle_ruleset,
 )
 from undercover.game.models import GameMode, LobbyState, LobbyView
 from undercover.redis.game_state import GameStateRepository
 from undercover.redis.lobby_state import LobbyRepository
-from undercover.texts import GAME_COMMAND, Errors, Lobby, empty_catalog_text
+from undercover.texts import GAME_COMMAND, Errors, Lobby, Rules, empty_catalog_text
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +118,24 @@ def create_lobby_router(catalog: CachedCatalog, start_discussion: PhaseStarter) 
         await redraw(bot, lobbies, lobby)
         await callback.answer()
 
+    @router.callback_query(LobbyCB.filter(F.action == LobbyAction.RULESET))
+    async def cb_ruleset(callback: CallbackQuery, bot: Bot, lobbies: LobbyRepository) -> None:
+        lobby = await _host_lobby(callback, lobbies)
+        if lobby is None:
+            return
+        toggle_ruleset(lobby)
+        await redraw(bot, lobbies, lobby)
+        await callback.answer()
+
+    @router.callback_query(LobbyCB.filter(F.action == LobbyAction.RULES))
+    async def cb_rules(callback: CallbackQuery, bot: Bot) -> None:
+        try:
+            await bot.send_message(callback.from_user.id, Rules.FULL)
+        except TelegramForbiddenError:
+            await callback.answer(url=await rules_link(bot))
+            return
+        await callback.answer(Lobby.RULES_SENT)
+
     @router.callback_query(LobbyCB.filter(F.action == LobbyAction.CATEGORIES))
     async def cb_categories(callback: CallbackQuery, bot: Bot, lobbies: LobbyRepository) -> None:
         lobby = await _host_lobby(callback, lobbies)
@@ -176,6 +201,7 @@ def create_lobby_router(catalog: CachedCatalog, start_discussion: PhaseStarter) 
                     rng=secure_rng(),
                     category_ids=lobby.category_ids,
                     mode=GameMode.GROUP,
+                    ruleset=lobby.ruleset,
                     turn_seconds=lobby.turn_seconds,
                 )
         except EmptyWordCatalogError:

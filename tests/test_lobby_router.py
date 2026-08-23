@@ -23,8 +23,9 @@ from undercover.game.models import (
     GameStatus,
     LobbyView,
     PlayerState,
+    Ruleset,
 )
-from undercover.texts import Buttons, Errors, Lobby
+from undercover.texts import RULESET_NAMES, Buttons, Errors, Lobby, Rules
 
 IDLE_TICK: Final = timedelta(minutes=1)
 GUEST_ID: Final = 555
@@ -336,3 +337,66 @@ async def test_only_the_host_changes_the_turn_length(group: Group) -> None:
 
     assert group.lobbies.stored.turn_seconds == DEFAULT_TURN_SECONDS
     assert Errors.NOT_HOST in group.alerts
+
+
+def ruleset_button(ruleset: Ruleset) -> str:
+    return Buttons.RULESET.format(name=RULESET_NAMES[ruleset])
+
+
+async def test_the_ruleset_button_switches_the_mode_there_and_back(group: Group) -> None:
+    await group.command("/undercover")
+    seen = []
+    for chosen in (Ruleset.CLASSIC, Ruleset.SUDDEN_DEATH):
+        await group.press(ruleset_button(chosen))
+        seen.append(group.lobbies.stored.ruleset)
+
+    assert seen == [Ruleset.SUDDEN_DEATH, Ruleset.CLASSIC]
+
+
+async def test_only_the_host_switches_the_ruleset(group: Group) -> None:
+    await group.command("/undercover")
+
+    await group.press(ruleset_button(Ruleset.CLASSIC), user_id=GUEST_ID)
+
+    assert group.lobbies.stored.ruleset is Ruleset.CLASSIC
+    assert Errors.NOT_HOST in group.alerts
+
+
+async def test_the_chosen_ruleset_reaches_the_session(group: Group) -> None:
+    await joined(group, GUEST_ID, OTHER_ID)
+    await group.press(ruleset_button(Ruleset.CLASSIC))
+
+    await group.press(Buttons.PLAY)
+
+    assert group.games.stored.ruleset is Ruleset.SUDDEN_DEATH
+
+
+async def test_the_rules_button_sends_the_rules_to_whoever_asked(group: Group) -> None:
+    await group.command("/undercover")
+
+    await group.press(Buttons.RULES, user_id=GUEST_ID)
+
+    rules = [call for call in group.session.calls(SendMessage) if call.text == Rules.FULL]
+    assert [call.chat_id for call in rules] == [GUEST_ID]
+    assert Lobby.RULES_SENT in group.alerts
+
+
+async def test_a_closed_private_chat_gets_a_deep_link_to_the_rules(group: Group) -> None:
+    await group.command("/undercover")
+    group.session.failures[SendMessage] = TelegramForbiddenError(
+        method=SendMessage(chat_id=GUEST_ID, text="x"),
+        message="bot can't initiate conversation with a user",
+    )
+
+    await group.press(Buttons.RULES, user_id=GUEST_ID)
+
+    assert any(url and "start=rules" in url for url in group.redirects)
+
+
+async def test_the_rules_button_works_for_someone_outside_the_roster(group: Group) -> None:
+    await joined(group, GUEST_ID)
+
+    await group.press(Buttons.RULES, user_id=OTHER_ID)
+
+    assert [player.user_id for player in group.lobbies.stored.players] == [GUEST_ID]
+    assert Rules.FULL in replies(group)

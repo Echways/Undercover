@@ -15,7 +15,7 @@ from discussion_harness import (
     words,
 )
 from undercover.bot.routers.discussion import start_discussion
-from undercover.game.models import EliminationBallot, GameStatus, Winner
+from undercover.game.models import EliminationBallot, GameStatus, Ruleset, Winner
 from undercover.texts import Buttons, Errors, Vote
 
 __all__ = ["log", "table", "words"]
@@ -308,3 +308,42 @@ async def test_a_whole_game_runs_from_the_first_round_to_a_victory(table: Table)
     assert SPY_NAME in table.card.caption
     assert Buttons.PLAY_AGAIN in table.card.texts
     assert table.games.stored.session_id == SESSION_ID
+
+
+async def test_a_first_shot_into_a_civilian_ends_a_sudden_death_game(table: Table) -> None:
+    await voting(table, ruleset=Ruleset.SUDDEN_DEATH)
+
+    await table.press(CIVILIANS[0])
+
+    stored = table.games.stored
+    assert stored.status is GameStatus.FINISHED
+    assert stored.winner is Winner.SPIES
+    assert Vote.SPIES_WIN_MISFIRE in table.card.caption
+    assert Buttons.SHOW_RESULT in table.card.texts
+
+
+async def test_a_first_shot_into_the_spy_still_wins_a_sudden_death_game(table: Table) -> None:
+    await voting(table, ruleset=Ruleset.SUDDEN_DEATH)
+
+    await table.press(SPY_NAME)
+
+    stored = table.games.stored
+    assert stored.winner is Winner.CIVILIANS
+    assert Vote.CIVILIANS_WIN in table.card.caption
+
+
+async def test_a_sudden_death_win_reaches_the_journal(table: Table) -> None:
+    await voting(table, ruleset=Ruleset.SUDDEN_DEATH)
+
+    await table.press(CIVILIANS[0])
+
+    assert [state.winner for state in table.log.states] == [Winner.SPIES]
+
+
+async def test_the_final_screen_repeats_why_the_spies_took_it(table: Table) -> None:
+    await voting(table, ruleset=Ruleset.SUDDEN_DEATH)
+    await table.press(CIVILIANS[0])
+
+    await table.press(Buttons.SHOW_RESULT)
+
+    assert Vote.SPIES_WIN_MISFIRE in table.card.caption

@@ -16,6 +16,11 @@ class GameMode(StrEnum):
     GROUP = "group"
 
 
+class Ruleset(StrEnum):
+    CLASSIC = "classic"
+    SUDDEN_DEATH = "sudden_death"
+
+
 class PlayerState(BaseModel):
     order_index: int = Field(ge=0)
 
@@ -80,6 +85,7 @@ class GameSessionState(BaseModel):
     chat_id: int
     host_user_id: int
     mode: GameMode = GameMode.HOT_SEAT
+    ruleset: Ruleset = Ruleset.CLASSIC
     status: GameStatus
     players: list[PlayerState]
 
@@ -126,6 +132,7 @@ class LobbyState(BaseModel):
     spies_count: int = Field(default=1, ge=1)
     category_ids: list[int] = Field(default_factory=list)
     turn_seconds: int = Field(default=DEFAULT_TURN_SECONDS, ge=0)
+    ruleset: Ruleset = Ruleset.CLASSIC
 
     view: LobbyView = LobbyView.ROSTER
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

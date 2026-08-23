@@ -4,8 +4,14 @@ from fake_words import catalog
 from undercover.bot.lobby_view import LobbyAction, LobbyCB, lobby_keyboard, lobby_text
 from undercover.bot.stats_view import StatsAction, StatsCB
 from undercover.game.engine import MAX_PLAYERS
-from undercover.game.models import DEFAULT_TURN_SECONDS, LobbyPlayer, LobbyState, LobbyView
-from undercover.texts import Buttons, Lobby
+from undercover.game.models import (
+    DEFAULT_TURN_SECONDS,
+    LobbyPlayer,
+    LobbyState,
+    LobbyView,
+    Ruleset,
+)
+from undercover.texts import RULESET_LINES, RULESET_NAMES, Buttons, Lobby
 
 CHAT_ID: Final = -1001234567890
 CATALOG: Final = catalog("Еда", "Города")
@@ -53,9 +59,11 @@ def test_the_roster_keyboard_carries_join_leave_settings_hall_and_start() -> Non
     assert texts_of(lobby(2)) == [
         Buttons.JOIN_LOBBY,
         Buttons.LEAVE_LOBBY,
+        Buttons.RULESET.format(name=RULESET_NAMES[Ruleset.CLASSIC]),
         Buttons.SPIES_COUNT.format(count=1),
         Buttons.TURN_LIMIT.format(seconds=DEFAULT_TURN_SECONDS),
         Buttons.CHANGE_CATEGORIES,
+        Buttons.RULES,
         Buttons.HALL_OF_FAME,
         Buttons.PLAY,
     ]
@@ -67,16 +75,41 @@ def test_the_roster_offers_the_hall_of_fame() -> None:
 
 def test_the_hall_of_fame_button_carries_the_stats_callback() -> None:
     rows = lobby_keyboard(lobby(3), CATALOG).inline_keyboard
-    (item,) = next(row for row in rows if row[0].text == Buttons.HALL_OF_FAME)
+    item = next(button for row in rows for button in row if button.text == Buttons.HALL_OF_FAME)
 
     assert item.callback_data == StatsCB(action=StatsAction.BOARD).pack()
 
 
-def test_the_hall_of_fame_does_not_crowd_the_start_button() -> None:
+def test_the_reading_buttons_do_not_crowd_the_start_button() -> None:
     rows = lobby_keyboard(lobby(3), CATALOG).inline_keyboard
     last_two = [[item.text for item in row] for row in rows[-2:]]
 
-    assert last_two == [[Buttons.HALL_OF_FAME], [Buttons.PLAY]]
+    assert last_two == [[Buttons.RULES, Buttons.HALL_OF_FAME], [Buttons.PLAY]]
+
+
+def test_the_roster_tells_newcomers_what_the_game_is_about() -> None:
+    assert Lobby.SYNOPSIS in lobby_text(lobby(), CATALOG)
+
+
+def test_the_summary_names_the_ruleset_and_what_it_costs() -> None:
+    classic = lobby_text(lobby(3), CATALOG)
+    sudden_death = lobby_text(lobby(3, ruleset=Ruleset.SUDDEN_DEATH), CATALOG)
+
+    assert RULESET_LINES[Ruleset.CLASSIC] in classic
+    assert RULESET_LINES[Ruleset.SUDDEN_DEATH] in sudden_death
+
+
+def test_the_ruleset_button_shows_the_mode_the_table_plays() -> None:
+    sudden_death = Buttons.RULESET.format(name=RULESET_NAMES[Ruleset.SUDDEN_DEATH])
+
+    assert sudden_death in texts_of(lobby(3, ruleset=Ruleset.SUDDEN_DEATH))
+    assert sudden_death not in texts_of(lobby(3))
+
+
+def test_the_category_view_hides_the_rules_and_the_ruleset() -> None:
+    state = lobby(2, view=LobbyView.CATEGORIES)
+
+    assert Buttons.RULES not in texts_of(state)
 
 
 def test_a_one_category_dictionary_offers_no_choice() -> None:

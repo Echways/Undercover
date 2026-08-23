@@ -1,6 +1,7 @@
 from collections.abc import Hashable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Final
 
 from undercover.game.engine import GameRulesError
 from undercover.game.models import (
@@ -11,8 +12,11 @@ from undercover.game.models import (
     GameMode,
     GameSessionState,
     PlayerState,
+    Ruleset,
     Winner,
 )
+
+FIRST_OUT: Final = 1
 
 
 class Refusal(StrEnum):
@@ -128,7 +132,15 @@ def outcome(state: GameSessionState) -> Winner | None:
     spies = [player for player in living if player.is_spy]
     if not spies:
         return Winner.CIVILIANS
-    return Winner.SPIES if len(spies) >= len(living) - len(spies) else None
+    if len(spies) >= len(living) - len(spies) or misfired(state):
+        return Winner.SPIES
+    return None
+
+
+def misfired(state: GameSessionState) -> bool:
+    return state.ruleset is Ruleset.SUDDEN_DEATH and any(
+        player.out_order == FIRST_OUT and not player.is_spy for player in state.players
+    )
 
 
 def _record[OptionT: Hashable](

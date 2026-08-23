@@ -6,13 +6,13 @@ from aiogram.filters import CommandObject, CommandStart
 from aiogram.types import Message
 from aiogram_dialog import DialogManager, StartMode
 
-from undercover.bot.lobby_view import JOIN_PAYLOAD_PREFIX, render_lobby
+from undercover.bot.lobby_view import JOIN_PAYLOAD_PREFIX, RULES_PAYLOAD, render_lobby
 from undercover.bot.routers.setup_draft import Setup
 from undercover.game.catalog import CachedCatalog
 from undercover.game.engine import GameRulesError
 from undercover.game.lobby import seat
 from undercover.redis.lobby_state import LobbyRepository
-from undercover.texts import Errors, Lobby, Start
+from undercover.texts import Errors, Lobby, Rules, Start
 
 JOIN_PAYLOAD: Final = re.compile(rf"^{JOIN_PAYLOAD_PREFIX}(-?\d+)$")
 
@@ -47,6 +47,10 @@ def create_start_router(catalog: CachedCatalog) -> Router:
 
         await message.answer(Lobby.DM_WELCOME)
         await render_lobby(bot, lobbies, lobby, await catalog.categories())
+
+    @router.message(CommandStart(deep_link=True, magic=F.args == RULES_PAYLOAD))
+    async def cmd_rules(message: Message) -> None:
+        await message.answer(Rules.FULL)
 
     @router.message(CommandStart())
     async def cmd_start(message: Message, dialog_manager: DialogManager) -> None:

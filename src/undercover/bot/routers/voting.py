@@ -28,13 +28,14 @@ from undercover.game.voting import (
     close_ballot,
     eliminate,
     elimination_result,
+    misfired,
     open_elimination_ballot,
     outcome,
     turnout,
 )
 from undercover.media.card_renderer import CARD_SUFFIX, render_ballot_card, render_verdict_card
 from undercover.redis.game_state import GameStateRepository
-from undercover.texts import VOTE_REFUSALS, WIN_LINES, Buttons, Vote
+from undercover.texts import VOTE_REFUSALS, Buttons, Vote, win_line
 
 
 class VoteAction(StrEnum):
@@ -208,7 +209,7 @@ def _verdict_caption(
             for order_index, votes in sorted(counts.items(), key=lambda pair: -pair[1])
         )
     if winner is not None:
-        lines.append(WIN_LINES[winner])
+        lines.append(win_line(winner, misfire=misfired(state)))
     return "\n".join(lines)
 
 

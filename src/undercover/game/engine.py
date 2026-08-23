@@ -9,6 +9,7 @@ from undercover.game.models import (
     GameSessionState,
     GameStatus,
     PlayerState,
+    Ruleset,
     WordWithHints,
 )
 
@@ -168,6 +169,7 @@ async def create_session(
     category_ids: Sequence[int] | None = None,
     player_ids: Sequence[int] | None = None,
     mode: GameMode = GameMode.HOT_SEAT,
+    ruleset: Ruleset = Ruleset.CLASSIC,
     turn_seconds: int = 0,
 ) -> GameSessionState:
     players = assign_roles(player_names, spies_count, rng, player_ids)
@@ -177,6 +179,7 @@ async def create_session(
         chat_id=chat_id,
         host_user_id=host_user_id,
         mode=mode,
+        ruleset=ruleset,
         turn_seconds=turn_seconds,
         status=GameStatus.SETUP,
         players=players,

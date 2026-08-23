@@ -11,11 +11,19 @@ from undercover.bot.keyboards import button
 from undercover.bot.message_utils import show_or_resend_text
 from undercover.bot.stats_view import StatsAction, StatsCB
 from undercover.game.engine import MAX_PLAYERS, CategoryRecord, offers_a_choice
-from undercover.game.models import LobbyState, LobbyView
+from undercover.game.models import LobbyState, LobbyView, Ruleset
 from undercover.redis.lobby_state import LobbyRepository
-from undercover.texts import Buttons, Lobby, chosen_categories_text
+from undercover.texts import (
+    RULESET_LINES,
+    RULESET_NAMES,
+    Buttons,
+    Lobby,
+    chosen_categories_text,
+)
 
 JOIN_PAYLOAD_PREFIX: Final = "join_"
+
+RULES_PAYLOAD: Final = "rules"
 
 CATEGORIES_PER_ROW: Final = 2
 
@@ -28,6 +36,8 @@ class LobbyAction(StrEnum):
     CATEGORIES = "cats"
     CATEGORY = "cat"
     DONE = "done"
+    RULESET = "ruleset"
+    RULES = "rules"
     PLAY = "play"
 
 
@@ -56,6 +66,10 @@ async def join_link(bot: Bot, chat_id: int) -> str:
     return await create_start_link(bot, f"{JOIN_PAYLOAD_PREFIX}{chat_id}", encode=False)
 
 
+async def rules_link(bot: Bot) -> str:
+    return await create_start_link(bot, RULES_PAYLOAD, encode=False)
+
+
 def lobby_text(lobby: LobbyState, categories: Sequence[CategoryRecord]) -> str:
     if lobby.view is LobbyView.CATEGORIES:
         return Lobby.PICK_CATEGORIES
@@ -63,6 +77,7 @@ def lobby_text(lobby: LobbyState, categories: Sequence[CategoryRecord]) -> str:
     return "\n\n".join(
         (
             Lobby.TITLE,
+            Lobby.SYNOPSIS,
             _roster(lobby),
             Lobby.SUMMARY.format(
                 players_count=len(lobby.players),
@@ -70,6 +85,7 @@ def lobby_text(lobby: LobbyState, categories: Sequence[CategoryRecord]) -> str:
                 chosen_categories=chosen_categories_text(
                     item.title for item in categories if item.id in lobby.category_ids
                 ),
+                ruleset=RULESET_LINES[lobby.ruleset],
             ),
             Lobby.CALL,
         )
@@ -110,8 +126,12 @@ def _roster_keyboard(
                 _lobby_button(Buttons.JOIN_LOBBY, LobbyAction.JOIN),
                 _lobby_button(Buttons.LEAVE_LOBBY, LobbyAction.LEAVE),
             ],
+            [_lobby_button(_ruleset_label(lobby.ruleset), LobbyAction.RULESET)],
             settings,
-            [button(Buttons.HALL_OF_FAME, StatsCB(action=StatsAction.BOARD))],
+            [
+                _lobby_button(Buttons.RULES, LobbyAction.RULES),
+                button(Buttons.HALL_OF_FAME, StatsCB(action=StatsAction.BOARD)),
+            ],
             [_lobby_button(Buttons.PLAY, LobbyAction.PLAY)],
         ]
     )
@@ -136,6 +156,10 @@ def _categories_keyboard(
     ]
     rows.append([_lobby_button(Buttons.CATEGORIES_DONE, LobbyAction.DONE)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _ruleset_label(ruleset: Ruleset) -> str:
+    return Buttons.RULESET.format(name=RULESET_NAMES[ruleset])
 
 
 def _turn_label(seconds: int) -> str:

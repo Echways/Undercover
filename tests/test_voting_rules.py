@@ -10,6 +10,7 @@ from undercover.game.models import (
     GameSessionState,
     GameStatus,
     PlayerState,
+    Ruleset,
     Winner,
 )
 from undercover.game.voting import (
@@ -23,6 +24,7 @@ from undercover.game.voting import (
     electorate,
     eliminate,
     elimination_result,
+    misfired,
     open_direction_ballot,
     open_elimination_ballot,
     outcome,
@@ -358,3 +360,54 @@ def test_a_player_who_survives_has_no_place_in_the_queue() -> None:
     eliminate(state, 3)
 
     assert [player.out_order for player in alive(state)] == [None, None, None, None]
+
+
+def sudden_death(**overrides: Any) -> GameSessionState:
+    return make_state(ruleset=Ruleset.SUDDEN_DEATH, **overrides)
+
+
+def test_a_first_shot_into_a_civilian_hands_the_game_to_the_spies() -> None:
+    state = sudden_death(spies=(1,))
+
+    eliminate(state, 0)
+
+    assert misfired(state)
+    assert outcome(state) is Winner.SPIES
+
+
+def test_a_first_shot_into_a_spy_keeps_the_game_alive() -> None:
+    state = sudden_death(spies=(1,), players=5)
+
+    eliminate(state, 1)
+
+    assert not misfired(state)
+    assert outcome(state) is Winner.CIVILIANS
+
+
+def test_the_second_shot_is_no_longer_the_deciding_one() -> None:
+    state = sudden_death(spies=(0, 1), players=5)
+    eliminate(state, 0)
+
+    eliminate(state, 2)
+
+    assert not misfired(state)
+    assert outcome(state) is None
+
+
+def test_the_classic_ruleset_forgives_the_first_mistake() -> None:
+    state = make_state(spies=(1,), players=5)
+
+    eliminate(state, 0)
+
+    assert not misfired(state)
+    assert outcome(state) is None
+
+
+def test_nobody_has_misfired_before_the_first_vote() -> None:
+    assert not misfired(sudden_death())
+
+
+def test_the_last_spy_still_loses_to_the_civilians_under_sudden_death() -> None:
+    state = sudden_death(spies=(1,), out=(1,))
+
+    assert outcome(state) is Winner.CIVILIANS

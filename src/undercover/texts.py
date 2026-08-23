@@ -2,7 +2,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Final
 
 from undercover.game.engine import MAX_NAME_LENGTH, MAX_PLAYERS, MIN_PLAYERS
-from undercover.game.models import Winner
+from undercover.game.models import Ruleset, Winner
 from undercover.game.voting import Refusal
 
 BRAND: Final = "Undercover"
@@ -83,14 +83,53 @@ class Setup:
     BROKEN_DRAFT: Final = "Настройки партии потерялись. Соберём состав заново."
 
 
+class Rules:
+    FULL: Final = (
+        f"{BRAND} — игра в шпиона.\n\n"
+        "Все за столом получают одно и то же слово. Все, кроме шпиона: ему "
+        "достаётся только подсказка, а само слово он выясняет по чужим "
+        "ассоциациям.\n\n"
+        "Ход партии:\n"
+        "1. Круг высказываний — каждый называет одну ассоциацию к слову. Само "
+        "слово вслух не произносят: мирный так дарит разгадку шпиону, а шпион "
+        "выдаёт себя.\n"
+        "2. После круга стол решает, говорить ещё или голосовать. Решает "
+        "половина состава плюс один голос.\n"
+        "3. На голосовании каждый живой игрок называет одного подозреваемого. "
+        "Выбывает тот, кого назвали чаще; при равенстве идёт переголосование "
+        "между лидерами, а второе равенство оставляет всех на местах.\n"
+        "4. Выбывший сразу открывает карту.\n\n"
+        "Кто победил:\n"
+        "— Мирные, когда среди живых не осталось ни одного шпиона.\n"
+        "— Шпионы, когда их становится не меньше, чем мирных.\n\n"
+        "Режимы:\n"
+        "— Классика: партия идёт, пока одна из сторон не возьмёт своё.\n"
+        "— Навылет: первое голосование решает всё. Выбили мирного — партия "
+        "сразу уходит шпионам.\n\n"
+        "Слово приходит в личку, ходы идут в группе. Играете за одним столом? "
+        "Отправьте мне /start — партия пойдёт с одного телефона."
+    )
+
+
 class Lobby:
     TITLE: Final = f"{BRAND} — набор в партию."
+    SYNOPSIS: Final = (
+        "Всем одно слово, шпиону — только подсказка. По кругу называете по одной "
+        "ассоциации и ищете того, кто выкручивается."
+    )
     ROSTER: Final = "В игре ({count} из {limit}):\n{names_list}"
     EMPTY_ROSTER: Final = "Пока никого."
     SUMMARY: Final = (
-        "Игроков: {players_count}, из них шпионов: {spies_count}.\nСлова: {chosen_categories}."
+        "Игроков: {players_count}, из них шпионов: {spies_count}.\n"
+        "Слова: {chosen_categories}.\n{ruleset}"
     )
-    CALL: Final = "Жмите «Я в игре» — слово придёт в личку."
+    CALL: Final = "Жмите «Я в игре» — слово придёт в личку. Разбор правил — под кнопкой «Правила»."
+
+    RULESET_CLASSIC: Final = "Режим: классика — партия идёт до победы одной из сторон."
+    RULESET_SUDDEN_DEATH: Final = (
+        "Режим: навылет — выбьете мирного первым голосованием, и партия уйдёт шпионам."
+    )
+    RULES_SENT: Final = "Правила ушли вам в личку."
 
     PICK_CATEGORIES: Final = (
         "Откуда брать слово?\n\nОтметьте категории — можно несколько. Без отметок "
@@ -156,6 +195,7 @@ class Vote:
 
     CIVILIANS_WIN: Final = "Шпионов не осталось. Победа мирных."
     SPIES_WIN: Final = "Шпионов столько же, сколько мирных. Победа шпионов."
+    SPIES_WIN_MISFIRE: Final = "Первым выбыл мирный житель. В режиме навылет партия за шпионами."
 
     WRONG_PHASE: Final = "Голосование уже закончено."
 
@@ -229,6 +269,8 @@ class Buttons:
     SPIES_COUNT: Final = "Шпионов: {count}"
     TURN_LIMIT: Final = "Ход: {seconds} с"
     TURN_OFF: Final = "Ход: без таймера"
+    RULESET: Final = "Режим: {name}"
+    RULES: Final = "Правила"
 
     SHOW_CARD: Final = "Посмотреть карточку"
     NEXT_PLAYER: Final = "Дальше"
@@ -301,6 +343,22 @@ WIN_LINES: Final[Mapping[Winner, str]] = {
     Winner.CIVILIANS: Vote.CIVILIANS_WIN,
     Winner.SPIES: Vote.SPIES_WIN,
 }
+
+RULESET_NAMES: Final[Mapping[Ruleset, str]] = {
+    Ruleset.CLASSIC: "классика",
+    Ruleset.SUDDEN_DEATH: "навылет",
+}
+
+RULESET_LINES: Final[Mapping[Ruleset, str]] = {
+    Ruleset.CLASSIC: Lobby.RULESET_CLASSIC,
+    Ruleset.SUDDEN_DEATH: Lobby.RULESET_SUDDEN_DEATH,
+}
+
+
+def win_line(winner: Winner, *, misfire: bool = False) -> str:
+    if winner is Winner.SPIES and misfire:
+        return Vote.SPIES_WIN_MISFIRE
+    return WIN_LINES[winner]
 
 
 def empty_catalog_text(category_ids: Sequence[int]) -> str:

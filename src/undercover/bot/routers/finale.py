@@ -25,9 +25,10 @@ from undercover.game.engine import (
     secure_rng,
 )
 from undercover.game.models import GameMode, GameSessionState, GameStatus
+from undercover.game.voting import misfired
 from undercover.media.card_renderer import CARD_SUFFIX, render_result_card
 from undercover.redis.game_state import GameStateRepository
-from undercover.texts import WIN_LINES, Buttons, Discussion, Errors, Lobby, empty_catalog_text
+from undercover.texts import Buttons, Discussion, Errors, Lobby, empty_catalog_text, win_line
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +113,7 @@ def create_finale_router(
                     rng=secure_rng(),
                     category_ids=state.category_ids,
                     mode=state.mode,
+                    ruleset=state.ruleset,
                     turn_seconds=state.turn_seconds,
                 )
         except EmptyWordCatalogError:
@@ -183,7 +185,9 @@ def _final_caption(state: GameSessionState, spies: Sequence[str]) -> str:
         spies=", ".join(spies),
         word=state.word_text,
     )
-    return body if state.winner is None else f"{WIN_LINES[state.winner]}\n{body}"
+    if state.winner is None:
+        return body
+    return f"{win_line(state.winner, misfire=misfired(state))}\n{body}"
 
 
 async def _replace(

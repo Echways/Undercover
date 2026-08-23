@@ -7,7 +7,7 @@ import pytest
 import undercover.bot
 import undercover.media
 from undercover import texts
-from undercover.game.models import Winner
+from undercover.game.models import Ruleset, Winner
 from undercover.game.voting import Refusal
 
 BOT_PACKAGE = Path(undercover.bot.__file__).parent
@@ -29,6 +29,8 @@ PICTOGRAPH = re.compile(
 SCREENS = (
     texts.Start,
     texts.Setup,
+    texts.Rules,
+    texts.Lobby,
     texts.Reveal,
     texts.Discussion,
     texts.Vote,
@@ -200,3 +202,21 @@ def test_every_winner_has_a_caption_and_a_line() -> None:
     for winner in Winner:
         assert texts.WIN_CAPTIONS[winner].strip()
         assert texts.WIN_LINES[winner].strip()
+
+
+def test_every_ruleset_has_a_button_name_and_a_line_in_the_lobby() -> None:
+    for ruleset in Ruleset:
+        assert texts.RULESET_NAMES[ruleset].strip()
+        assert texts.RULESET_LINES[ruleset].strip()
+
+
+def test_the_rules_describe_every_ruleset_the_lobby_offers() -> None:
+    spelled_out = texts.Rules.FULL.casefold()
+
+    assert [name for name in texts.RULESET_NAMES.values() if name not in spelled_out] == []
+
+
+def test_the_misfire_line_belongs_to_the_spies() -> None:
+    assert texts.win_line(Winner.SPIES, misfire=True) == texts.Vote.SPIES_WIN_MISFIRE
+    assert texts.win_line(Winner.SPIES) == texts.Vote.SPIES_WIN
+    assert texts.win_line(Winner.CIVILIANS, misfire=True) == texts.Vote.CIVILIANS_WIN

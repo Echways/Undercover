@@ -14,9 +14,16 @@ from undercover.game.lobby import (
     join,
     leave,
     toggle_category,
+    toggle_ruleset,
     unique_name,
 )
-from undercover.game.models import DEFAULT_TURN_SECONDS, TURN_CHOICES, LobbyPlayer, LobbyState
+from undercover.game.models import (
+    DEFAULT_TURN_SECONDS,
+    TURN_CHOICES,
+    LobbyPlayer,
+    LobbyState,
+    Ruleset,
+)
 
 CHAT_ID = -1001234567890
 HOST_ID = 777
@@ -161,3 +168,17 @@ def test_an_unknown_turn_length_falls_back_to_the_first_choice() -> None:
     cycle_turn_seconds(state)
 
     assert state.turn_seconds == TURN_CHOICES[0]
+
+
+def test_a_new_lobby_plays_by_the_classic_rules() -> None:
+    assert lobby().ruleset is Ruleset.CLASSIC
+
+
+def test_the_ruleset_switches_there_and_back() -> None:
+    state = lobby()
+    seen = []
+    for _ in range(2):
+        toggle_ruleset(state)
+        seen.append(state.ruleset)
+
+    assert seen == [Ruleset.SUDDEN_DEATH, Ruleset.CLASSIC]
