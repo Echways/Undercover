@@ -17,7 +17,7 @@ from undercover.bot.routers.reveal import start_reveal
 from undercover.bot.routers.setup_dialog import create_setup_dialog
 from undercover.bot.routers.start import create_start_router
 from undercover.game.models import LobbyState
-from undercover.texts import Errors, Lobby, Rules, Start
+from undercover.texts import GAME_COMMAND, Errors, Lobby, Rules, Start
 from undercover.texts import Setup as SetupTexts
 
 PLAYERS_COUNT: Final = "4"
@@ -73,6 +73,19 @@ async def deep_link_start(table: Table, payload: str, *, user_id: int = GUEST_ID
             user_id=user_id,
             chat_id=user_id,
             chat_type="private",
+            update_id=len(table.session.requests) + 1,
+        ),
+    )
+
+
+async def group_start(table: Table, text: str = "/start") -> None:
+    await table.client.dp.feed_update(
+        table.client.bot,
+        message_update(
+            text,
+            user_id=HOST_ID,
+            chat_id=CHAT_ID,
+            chat_type="supergroup",
             update_id=len(table.session.requests) + 1,
         ),
     )
@@ -169,3 +182,21 @@ async def test_a_plain_start_still_opens_the_hot_seat_setup(table: Table) -> Non
 
     assert Start.GREETING in table.greetings
     assert table.lobbies.stored.players == []
+
+
+async def test_a_group_start_does_not_open_the_hot_seat_setup(table: Table) -> None:
+    await group_start(table)
+
+    assert table.greetings == [Start.GROUP_REFUSAL]
+    assert table.messages.sent_messages == []
+
+
+async def test_a_group_start_points_at_the_group_command(table: Table) -> None:
+    assert f"/{GAME_COMMAND}" in Start.GROUP_REFUSAL
+
+
+async def test_a_group_start_with_a_payload_seats_nobody(table: Table) -> None:
+    await group_start(table, f"/start join_{CHAT_ID}")
+
+    assert table.lobbies.stored.players == []
+    assert table.greetings == [Start.GROUP_REFUSAL]

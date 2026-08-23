@@ -9,6 +9,7 @@ from aiogram.types import Chat, Message
 
 from undercover.bot.turn_clock import TurnKeeper
 from undercover.game.models import GameSessionState, LobbyState
+from undercover.redis.dialog_state import DialogStateRepository
 from undercover.redis.game_state import GameStateRepository
 from undercover.redis.lobby_state import LobbyRepository
 from undercover.texts import RESET_COMMAND, Reset
@@ -25,14 +26,19 @@ def create_reset_router(keeper: TurnKeeper) -> Router:
 
     @router.message(Command(RESET_COMMAND))
     async def cmd_reset(
-        message: Message, bot: Bot, games: GameStateRepository, lobbies: LobbyRepository
+        message: Message,
+        bot: Bot,
+        games: GameStateRepository,
+        lobbies: LobbyRepository,
+        dialogs: DialogStateRepository,
     ) -> None:
         if message.from_user is None:
             return
 
         game = await games.load_active(message.chat.id)
         lobby = await lobbies.load(message.chat.id)
-        if game is None and lobby is None:
+        stray_dialogs = await dialogs.count(message.chat.id)
+        if game is None and lobby is None and not stray_dialogs:
             await message.answer(Reset.NOTHING)
             return
         if not await _may_reset(bot, message.chat, message.from_user.id, game, lobby):
@@ -44,6 +50,7 @@ def create_reset_router(keeper: TurnKeeper) -> Router:
             await games.delete(game.session_id)
         if lobby is not None:
             await lobbies.delete(message.chat.id)
+        await dialogs.clear(message.chat.id)
 
         logger.info("чат %s: партию сбросил %s", message.chat.id, message.from_user.id)
         await message.answer(Reset.DONE)

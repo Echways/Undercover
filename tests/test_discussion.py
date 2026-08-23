@@ -630,3 +630,21 @@ async def test_the_table_can_still_vote_after_the_last_turn_expired(table: Table
         )
 
     assert table.games.stored.status is GameStatus.VOTING
+
+
+async def test_a_forgotten_setup_dialog_does_not_swallow_the_vote(table: Table) -> None:
+    await table.send("/start")
+    await all_spoken(table)
+
+    await table.press(Buttons.GO_TO_VOTE)
+
+    assert table.games.stored.status is GameStatus.VOTING
+
+
+async def test_a_forgotten_setup_dialog_does_not_swallow_the_final_card(table: Table) -> None:
+    await table.send("/start")
+    await talking(table)
+
+    await table.press(Buttons.SHOW_SPIES)
+
+    assert table.games.stored.status is GameStatus.FINISHED

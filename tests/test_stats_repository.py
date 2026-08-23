@@ -80,16 +80,26 @@ async def test_an_empty_chat_has_played_nothing(db_session: AsyncSession) -> Non
     assert totals.games == 0
 
 
-async def test_the_totals_count_every_finished_game_and_both_sides(
+async def test_the_totals_count_every_decided_game_and_both_sides(
     db_session: AsyncSession, word: Word
 ) -> None:
     await play(db_session, word, Seat(1, "Аня", is_spy=True), Seat(2, "Борис"))
     await play(db_session, word, Seat(1, "Аня"), Seat(2, "Борис", is_spy=True), winner=Winner.SPIES)
+
+    totals = await StatsRepository(db_session).chat_totals(CHAT_ID)
+
+    assert (totals.games, totals.civilian_wins, totals.spy_wins) == (2, 1, 1)
+
+
+async def test_a_game_closed_without_a_winner_stays_out_of_the_totals(
+    db_session: AsyncSession, word: Word
+) -> None:
+    await play(db_session, word, Seat(1, "Аня", is_spy=True), Seat(2, "Борис"))
     await play(db_session, word, Seat(1, "Аня"), Seat(2, "Борис"), winner=None)
 
     totals = await StatsRepository(db_session).chat_totals(CHAT_ID)
 
-    assert (totals.games, totals.civilian_wins, totals.spy_wins) == (3, 1, 1)
+    assert (totals.games, totals.civilian_wins, totals.spy_wins) == (1, 1, 0)
 
 
 async def test_a_stranger_to_the_chat_has_no_profile(db_session: AsyncSession, word: Word) -> None:

@@ -6,6 +6,7 @@ from aiogram.filters import CommandObject, CommandStart
 from aiogram.types import Message
 from aiogram_dialog import DialogManager, StartMode
 
+from undercover.bot.filters import IN_GROUP
 from undercover.bot.lobby_view import JOIN_PAYLOAD_PREFIX, RULES_PAYLOAD, render_lobby
 from undercover.bot.routers.setup_draft import Setup
 from undercover.game.catalog import CachedCatalog
@@ -19,6 +20,10 @@ JOIN_PAYLOAD: Final = re.compile(rf"^{JOIN_PAYLOAD_PREFIX}(-?\d+)$")
 
 def create_start_router(catalog: CachedCatalog) -> Router:
     router = Router(name="start")
+
+    @router.message(CommandStart(), IN_GROUP)
+    async def cmd_start_in_group(message: Message) -> None:
+        await message.answer(Start.GROUP_REFUSAL)
 
     @router.message(CommandStart(deep_link=True, magic=F.args.regexp(JOIN_PAYLOAD)))
     async def cmd_join_lobby(

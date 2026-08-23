@@ -64,7 +64,7 @@ class StatsRepository:
                     .filter(GameSessionLog.winner == Winner.CIVILIANS)
                     .label("civilian_wins"),
                     func.count().filter(GameSessionLog.winner == Winner.SPIES).label("spy_wins"),
-                ).where(GameSessionLog.chat_id == chat_id)
+                ).where(GameSessionLog.chat_id == chat_id, GameSessionLog.winner.is_not(None))
             )
         ).one()
         return ChatTotals(games=row.games, civilian_wins=row.civilian_wins, spy_wins=row.spy_wins)

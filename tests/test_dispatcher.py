@@ -3,7 +3,6 @@ from typing import Final
 import pytest
 from aiogram import Bot, Dispatcher
 from aiogram.dispatcher.event.telegram import TelegramEventObserver
-from aiogram.fsm.storage.base import DefaultKeyBuilder
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.methods import SetMyCommands
 from aiogram.types import BotCommandScopeAllGroupChats
@@ -20,17 +19,18 @@ from undercover.bot.middlewares.observability import UpdateLogMiddleware
 from undercover.bot.middlewares.throttling import ThrottlingMiddleware
 from undercover.bot.turn_clock import TurnClock
 from undercover.di import AppDependencies, build_dependencies
+from undercover.redis.dialog_state import DIALOG_KEYS
 
 EXPECTED_ROUTERS: Final = (
     "start",
     "lobby",
     "reset",
     "stats",
-    "Setup",
     "reveal",
     "discussion",
     "voting",
     "finale",
+    "Setup",
     "errors",
 )
 
@@ -102,8 +102,8 @@ def test_the_fsm_lives_in_redis_with_dialog_keys(
     storage = dispatcher.storage
 
     assert isinstance(storage, RedisStorage)
-    assert isinstance(storage.key_builder, DefaultKeyBuilder)
-    assert storage.key_builder.with_destiny is True
+    assert storage.key_builder is DIALOG_KEYS
+    assert DIALOG_KEYS.with_destiny is True
 
 
 def test_only_real_telegram_updates_are_requested(dispatcher: Dispatcher) -> None:

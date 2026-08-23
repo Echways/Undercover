@@ -10,6 +10,7 @@ from aiogram.types import InlineKeyboardMarkup
 
 from discussion_harness import SESSION_ID, make_state
 from fake_bot import CHAT_ID, HOST_ID, FakeSession, chat_admin, make_bot, message_update
+from fake_dialogs import FakeDialogStateRepository
 from fake_games import FakeGameStateRepository
 from fake_lobbies import FakeLobbyRepository
 from undercover.bot.routers.reset import create_reset_router
@@ -30,6 +31,7 @@ class Table:
     session: FakeSession
     games: FakeGameStateRepository
     lobbies: FakeLobbyRepository
+    dialogs: FakeDialogStateRepository
     keeper: TurnKeeper
 
     async def send(
@@ -56,8 +58,9 @@ async def table() -> AsyncIterator[Table]:
     session = FakeSession()
     games = FakeGameStateRepository()
     lobbies = FakeLobbyRepository()
+    dialogs = FakeDialogStateRepository()
     keeper = TurnKeeper(clock=TurnClock(tick=IDLE_TICK), locks=KeyedLocks())
-    dispatcher = Dispatcher(games=games, lobbies=lobbies)
+    dispatcher = Dispatcher(games=games, lobbies=lobbies, dialogs=dialogs)
     dispatcher.include_router(create_reset_router(keeper))
 
     yield Table(
@@ -66,6 +69,7 @@ async def table() -> AsyncIterator[Table]:
         session=session,
         games=games,
         lobbies=lobbies,
+        dialogs=dialogs,
         keeper=keeper,
     )
 
@@ -112,6 +116,25 @@ async def test_a_reset_clears_both_the_lobby_and_the_game(table: Table) -> None:
 
     assert table.games.is_empty
     assert table.lobbies.is_empty
+
+
+async def test_a_reset_wipes_the_dialogs_left_in_the_chat(table: Table) -> None:
+    await table.games.save(make_state(mode=GameMode.GROUP))
+    table.dialogs.opened_in(CHAT_ID)
+
+    await table.send()
+
+    assert table.dialogs.is_empty
+
+
+async def test_a_stuck_dialog_alone_is_worth_a_reset(table: Table) -> None:
+    table.dialogs.opened_in(CHAT_ID)
+    table.session.results[GetChatMember] = [chat_admin(HOST_ID)]
+
+    await table.send()
+
+    assert table.dialogs.is_empty
+    assert table.replies == [Reset.DONE]
 
 
 async def test_a_reset_stops_the_turn_clock(table: Table) -> None:

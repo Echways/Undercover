@@ -3,7 +3,6 @@ from functools import partial
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import UpdateType
-from aiogram.fsm.storage.base import DefaultKeyBuilder
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import BotCommand, BotCommandScopeAllGroupChats
 from aiogram_dialog import setup_dialogs
@@ -33,6 +32,7 @@ from undercover.db.repositories.words import words_source
 from undercover.di import AppDependencies
 from undercover.game.catalog import CachedCatalog
 from undercover.log import get_logger
+from undercover.redis.dialog_state import DIALOG_KEYS
 from undercover.texts import GAME_COMMAND, RESET_COMMAND, STATS_COMMAND, Start
 
 logger = get_logger(__name__)
@@ -73,11 +73,11 @@ def create_dispatcher(dependencies: AppDependencies) -> Dispatcher:
     dispatcher.include_router(create_lobby_router(catalog, begin_discussion))
     dispatcher.include_router(create_reset_router(keeper))
     dispatcher.include_router(create_stats_router(open_stats))
-    dispatcher.include_router(create_setup_dialog(catalog, start_reveal))
     dispatcher.include_router(create_reveal_router(begin_discussion))
     dispatcher.include_router(create_discussion_router(flow))
     dispatcher.include_router(create_voting_router(keeper, begin_discussion, log_game))
     dispatcher.include_router(create_finale_router(open_words, log_game, keeper, begin_discussion))
+    dispatcher.include_router(create_setup_dialog(catalog, start_reveal))
     dispatcher.include_router(create_error_router())
 
     setup_dialogs(dispatcher)
@@ -92,10 +92,7 @@ def resolve_allowed_updates(dispatcher: Dispatcher) -> list[str]:
 
 
 def _create_storage(dependencies: AppDependencies) -> RedisStorage:
-    return RedisStorage(
-        dependencies.redis,
-        key_builder=DefaultKeyBuilder(with_destiny=True),
-    )
+    return RedisStorage(dependencies.redis, key_builder=DIALOG_KEYS)
 
 
 async def _publish_commands(bot: Bot) -> None:

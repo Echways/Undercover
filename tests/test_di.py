@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from conftest import SetEnv
 from undercover.config import Settings, load_settings
 from undercover.di import AppDependencies, DependencyUnavailableError, build_dependencies
+from undercover.redis.dialog_state import DialogStateRepository
 from undercover.redis.game_state import GameStateRepository
 from undercover.redis.lobby_state import LobbyRepository
 
@@ -66,6 +67,7 @@ def _dependencies(
         redis=cast(Redis, redis or _StubRedis()),
         games=cast(GameStateRepository, object()),
         lobbies=cast(LobbyRepository, object()),
+        dialogs=cast(DialogStateRepository, object()),
     )
 
 
@@ -82,6 +84,7 @@ def test_build_dependencies_reuses_one_engine(settings: Settings) -> None:
     assert dependencies.sessionmaker.kw["bind"] is dependencies.engine
     assert dependencies.games._redis is dependencies.redis
     assert dependencies.lobbies._redis is dependencies.redis
+    assert dependencies.dialogs._redis is dependencies.redis
 
 
 def test_workflow_data_reaches_dispatcher(settings: Settings) -> None:
@@ -94,6 +97,7 @@ def test_workflow_data_reaches_dispatcher(settings: Settings) -> None:
     assert dispatcher["sessionmaker"] is dependencies.sessionmaker
     assert dispatcher["games"] is dependencies.games
     assert dispatcher["lobbies"] is dependencies.lobbies
+    assert dispatcher["dialogs"] is dependencies.dialogs
 
 
 def test_engine_is_not_exposed_to_handlers(settings: Settings) -> None:
@@ -103,6 +107,7 @@ def test_engine_is_not_exposed_to_handlers(settings: Settings) -> None:
         "redis",
         "games",
         "lobbies",
+        "dialogs",
     }
 
 

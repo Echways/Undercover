@@ -206,11 +206,11 @@ async def lay_table(words: FakeWords, log: RecordingLog, tick: timedelta) -> Asy
     begin_discussion = partial(start_discussion, flow=flow)
     dispatcher = Dispatcher(storage=JsonMemoryStorage(), games=games)
     dispatcher.include_router(start_router())
-    dispatcher.include_router(create_setup_dialog(words.cached(), start_reveal))
     dispatcher.include_router(create_reveal_router(begin_discussion))
     dispatcher.include_router(create_discussion_router(flow))
     dispatcher.include_router(create_voting_router(keeper, begin_discussion, log))
     dispatcher.include_router(create_finale_router(words.open, log, keeper, begin_discussion))
+    dispatcher.include_router(create_setup_dialog(words.cached(), start_reveal))
     messages = MockMessageManager()
     setup_dialogs(dispatcher, message_manager=messages)
 
