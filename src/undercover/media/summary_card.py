@@ -3,13 +3,12 @@ from collections.abc import Sequence
 from undercover.game.models import Winner
 from undercover.game.summary import GameSummary, Suspect
 from undercover.media.blocks import Block, TextBlock, caption, footnote, stamp
-from undercover.media.canvas import render
+from undercover.media.canvas import content_height, render
 from undercover.media.layout import (
     BACKGROUND_NEUTRAL,
     BACKGROUND_UNDERCOVER,
     BANNER_SIZE,
     CASE_SIZE,
-    CONTENT_HEIGHT,
     FONT_BOLD,
     FONT_REGULAR,
     GLOW_COLD,
@@ -56,7 +55,7 @@ def render_summary_card(summary: GameSummary, promo: str | None = None) -> bytes
     warm = summary.winner is not Winner.CIVILIANS
     head = _head(summary, warm)
     tail = _tail(summary, warm)
-    budget = CONTENT_HEIGHT - _extent(head) - _extent(tail) - SUMMARY_SECTION_SPACE
+    budget = content_height(promo) - _extent(head) - _extent(tail) - SUMMARY_SECTION_SPACE
 
     return render(
         BACKGROUND_UNDERCOVER if warm else BACKGROUND_NEUTRAL,
@@ -131,7 +130,7 @@ def _word(summary: GameSummary) -> TextBlock:
     )
     return TextBlock(
         lines=lines,
-        font=face,
+        face=face,
         color=INK,
         space_before=SUMMARY_TIGHT_SPACE,
         line_spacing=WORD_LINE_SPACING,
@@ -153,7 +152,7 @@ def _hint(summary: GameSummary, warm: bool) -> TextBlock | None:
     )
     return TextBlock(
         lines=lines,
-        font=face,
+        face=face,
         color=_muted(warm),
         space_before=SUMMARY_TIGHT_SPACE,
         line_spacing=HINT_LINE_SPACING,

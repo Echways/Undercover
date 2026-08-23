@@ -1,15 +1,16 @@
 import inspect
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 
 import pytest
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageDraw
 
 from undercover.game.models import Ruleset, Winner
 from undercover.game.summary import GameSummary, Suspect
 from undercover.media.blocks import Block, headline
-from undercover.media.canvas import render
+from undercover.media.canvas import content_height, render, squeeze
 from undercover.media.card_renderer import (
     render_ballot_card,
     render_civilian_card,
@@ -23,18 +24,18 @@ from undercover.media.layout import (
     BACKGROUND_UNDERCOVER,
     CARD_FORMAT,
     CARD_SIZE,
-    CONTENT_HEIGHT,
     CONTENT_WIDTH,
     FONT_BOLD,
     FONT_REGULAR,
     GLOW_COLD,
     HEADLINE_MAX_SIZE,
     HINT_MAX_SIZE,
+    INK,
     SAFE_MARGIN,
     TEMPLATES_DIR,
 )
 from undercover.media.summary_card import render_summary_card
-from undercover.media.typography import font, plain, shorten, text_width, wrap
+from undercover.media.typography import font, plain, shorten, wrap
 
 RENDERERS: tuple[Callable[..., bytes], ...] = (
     render_hidden_card,
@@ -226,7 +227,7 @@ def test_wrap_falls_back_to_letters_when_there_is_nowhere_to_break() -> None:
     lines = wrap(word, face, CONTENT_WIDTH, 0)
 
     assert "".join(lines) == word
-    assert all(text_width(face, line, 0) <= CONTENT_WIDTH for line in lines)
+    assert all(face.width(line, 0) <= CONTENT_WIDTH for line in lines)
 
 
 def test_wrap_keeps_words_whole_while_they_fit() -> None:
@@ -247,7 +248,7 @@ def test_shorten_cuts_a_long_line_down_to_the_width() -> None:
     result = shorten("Аполлинария" * 5, face, CONTENT_WIDTH, 0)
 
     assert result.endswith("…")
-    assert text_width(face, result, 0) <= CONTENT_WIDTH
+    assert face.width(result, 0) <= CONTENT_WIDTH
 
 
 def test_shorten_counts_tracking_in_the_width() -> None:
@@ -255,7 +256,7 @@ def test_shorten_counts_tracking_in_the_width() -> None:
 
     tracked = shorten("Аполлинария" * 5, face, CONTENT_WIDTH, 12)
 
-    assert text_width(face, tracked, 12) <= CONTENT_WIDTH
+    assert face.width(tracked, 12) <= CONTENT_WIDTH
 
 
 def test_plain_squeezes_the_whitespace_out() -> None:
@@ -319,9 +320,55 @@ def test_the_promo_line_stays_inside_the_safe_margin() -> None:
     assert bottom <= CARD_SIZE[1] - SAFE_MARGIN
 
 
+@dataclass(frozen=True, slots=True)
+class Slab:
+    space_before: int
+    height: int
+
+    def draw(self, layer: Image.Image, top: int) -> None:
+        ImageDraw.Draw(layer).rectangle((0, top, CARD_SIZE[0], top + self.height), fill=INK)
+
+
+def test_a_stack_that_fits_keeps_its_gaps() -> None:
+    blocks: tuple[Block, ...] = (Slab(0, 200), Slab(48, 200))
+
+    assert squeeze(blocks, content_height(PROMO)) == 1.0
+
+
+def test_the_gaps_give_way_when_the_stack_is_too_tall() -> None:
+    band = content_height(PROMO)
+    blocks: tuple[Block, ...] = (Slab(0, band - 200), Slab(200, 100))
+
+    scale = squeeze(blocks, band)
+
+    assert scale == pytest.approx(0.5)
+    assert sum(block.space_before * scale + block.height for block in blocks) <= band
+
+
+def test_a_stack_taller_than_the_band_drops_its_gaps() -> None:
+    band = content_height(PROMO)
+    blocks: tuple[Block, ...] = (Slab(0, band), Slab(64, 100))
+
+    assert squeeze(blocks, band) == 0.0
+
+
+def test_a_crowded_card_keeps_its_content_off_the_footer() -> None:
+    band = content_height(PROMO)
+    blocks: tuple[Block, ...] = (Slab(0, 300), Slab(400, 300), Slab(400, 300))
+
+    payload = render(BACKGROUND_NEUTRAL, GLOW_COLD, blocks, PROMO)
+    _, top, _, _ = content_box(payload, BACKGROUND_NEUTRAL)
+
+    assert top >= SAFE_MARGIN
+    assert sum(block.height for block in blocks) <= band
+
+
 def test_the_content_height_leaves_room_for_the_footer() -> None:
-    assert CARD_SIZE[1] - 2 * SAFE_MARGIN > CONTENT_HEIGHT
-    assert CONTENT_HEIGHT > 0
+    for promo in (None, PROMO):
+        assert CARD_SIZE[1] - 2 * SAFE_MARGIN > content_height(promo)
+        assert content_height(promo) > 0
+
+    assert content_height(PROMO) < content_height(None)
 
 
 def test_the_ballot_card_is_drawn_on_the_neutral_background() -> None:

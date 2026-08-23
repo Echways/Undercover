@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from math import ceil
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 from undercover.media.layout import (
     CONTENT_LEFT,
@@ -20,7 +20,7 @@ from undercover.media.layout import (
     ROSTER_TAG_TRACKING,
     Ink,
 )
-from undercover.media.typography import draw_tracked, font, shorten, text_width
+from undercover.media.typography import Face, Stack, draw_text, font, shorten, stack
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,14 +35,14 @@ class RosterRow:
 @dataclass(frozen=True, slots=True)
 class RosterBlock:
     rows: tuple[RosterRow, ...]
-    name_font: ImageFont.FreeTypeFont
-    tag_font: ImageFont.FreeTypeFont
+    name_face: Face
+    tag_face: Face
     space_before: int = 0
     columns: int = 1
 
     @property
     def line_height(self) -> int:
-        return round(self.name_font.size * ROSTER_LINE_SPACING)
+        return self.name_face.line_height(ROSTER_LINE_SPACING)
 
     @property
     def rows_per_column(self) -> int:
@@ -50,7 +50,7 @@ class RosterBlock:
 
     @property
     def height(self) -> int:
-        return self.line_height * self.rows_per_column
+        return self._stack.height
 
     @property
     def column_width(self) -> float:
@@ -58,27 +58,40 @@ class RosterBlock:
 
     def draw(self, layer: Image.Image, top: int) -> None:
         draw = ImageDraw.Draw(layer)
-        drop = self.name_font.getmetrics()[0] - self.tag_font.getmetrics()[0]
         width = self.column_width
+        first = top + self._stack.baseline
 
         for index, row in enumerate(self.rows):
             column, line = divmod(index, self.rows_per_column)
             left = CONTENT_LEFT + column * (width + ROSTER_SPLIT_GAP)
-            line_top = top + line * self.line_height
+            baseline = first + line * self.line_height
             tag = self._tag(row)
-            tag_width = text_width(self.tag_font, tag, ROSTER_TAG_TRACKING)
-            name = shorten(row.name, self.name_font, _name_width(width, tag_width), 0)
-            draw.text((left, line_top), name, font=self.name_font, fill=row.ink)
+            tag_width = self.tag_face.width(tag, ROSTER_TAG_TRACKING)
+            name = shorten(row.name, self.name_face, _name_width(width, tag_width), 0)
+            draw_text(
+                draw,
+                (self.name_face.left_at(left, name), baseline),
+                name,
+                self.name_face,
+                row.ink,
+            )
             if not tag:
                 continue
-            draw_tracked(
+            draw_text(
                 draw,
-                (left + width - tag_width, line_top + drop),
+                (self.tag_face.right_at(left + width, tag, ROSTER_TAG_TRACKING), baseline),
                 tag,
-                self.tag_font,
+                self.tag_face,
                 row.tag_ink,
                 ROSTER_TAG_TRACKING,
             )
+
+    @property
+    def _stack(self) -> Stack:
+        tags = [self._tag(row) for row in self.rows]
+        boxes = [self.name_face.box(row.name) for row in self.rows]
+        boxes += [self.tag_face.box(tag) for tag in tags if tag]
+        return stack(self.name_face, boxes, self.line_height, self.rows_per_column)
 
     def _tag(self, row: RosterRow) -> str:
         if self.columns > 1 and row.short_tag:
@@ -99,8 +112,8 @@ def _sized(rows: Sequence[RosterRow], size: int, space_before: int, columns: int
     tag_size = max(round(size * ROSTER_TAG_RATIO), ROSTER_TAG_MIN_SIZE)
     return RosterBlock(
         rows=tuple(rows),
-        name_font=font(FONT_BOLD, size),
-        tag_font=font(FONT_BOLD, tag_size),
+        name_face=font(FONT_BOLD, size),
+        tag_face=font(FONT_BOLD, tag_size),
         space_before=space_before,
         columns=columns,
     )

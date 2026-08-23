@@ -12,7 +12,6 @@ from undercover.media.layout import (
     ROSTER_TAG_TRACKING,
 )
 from undercover.media.roster import RosterBlock, RosterRow, roster
-from undercover.media.typography import text_width
 
 SPY_TAG = "ШПИОН · 1-Й ВЫЛЕТ"
 SHORT_TAG = "ШПИОН · 1-Й"
@@ -38,7 +37,7 @@ def painted(block: RosterBlock) -> Image.Image:
 
 
 def test_a_short_roster_keeps_the_largest_size() -> None:
-    assert roster(rows(4), budget=1000).name_font.size == ROSTER_MAX_SIZE
+    assert roster(rows(4), budget=1000).name_face.size == ROSTER_MAX_SIZE
 
 
 def test_a_roster_that_fits_stays_in_one_column() -> None:
@@ -63,11 +62,11 @@ def test_a_crowded_roster_shrinks_to_fit_the_budget() -> None:
     block = roster(rows(16), budget=400)
 
     assert block.height <= 400
-    assert block.name_font.size < ROSTER_MAX_SIZE
+    assert block.name_face.size < ROSTER_MAX_SIZE
 
 
 def test_an_impossible_budget_stops_at_the_smallest_size() -> None:
-    assert roster(rows(16), budget=1).name_font.size == ROSTER_MIN_SIZE
+    assert roster(rows(16), budget=1).name_face.size == ROSTER_MIN_SIZE
 
 
 def test_the_block_reserves_exactly_what_it_paints() -> None:
@@ -105,7 +104,7 @@ def test_a_long_name_leaves_the_gap_before_the_tag_empty() -> None:
         (RosterRow(name="Аполлинария" * 5, tag=SPY_TAG, ink=INK, tag_ink=ROSTER_SPY_INK),),
         budget=1000,
     )
-    tag_left = CONTENT_RIGHT - text_width(block.tag_font, SPY_TAG, ROSTER_TAG_TRACKING)
+    tag_left = CONTENT_RIGHT - block.tag_face.width(SPY_TAG, ROSTER_TAG_TRACKING)
 
     gap = painted(block).crop(
         (round(tag_left - ROSTER_COLUMN_GAP), 0, round(tag_left), block.height)
