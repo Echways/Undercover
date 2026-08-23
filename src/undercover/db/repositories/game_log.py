@@ -1,6 +1,7 @@
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from undercover.db.models import GamePlayerResult, GameSessionLog
@@ -31,7 +32,7 @@ class GameLogRepository:
 
     async def record_finished(
         self, state: GameSessionState, finished_at: datetime | None = None
-    ) -> None:
+    ) -> int:
         at = finished_at or datetime.now(UTC)
         self._session.add(
             GameSessionLog(
@@ -47,13 +48,23 @@ class GameLogRepository:
             )
         )
         await self._session.flush()
+        return await self._case_number(state.chat_id)
+
+    async def _case_number(self, chat_id: int) -> int:
+        return (
+            await self._session.execute(
+                select(func.count())
+                .select_from(GameSessionLog)
+                .where(GameSessionLog.chat_id == chat_id)
+            )
+        ).scalar_one()
 
 
 def game_log_writer(
     sessionmaker: async_sessionmaker[AsyncSession],
-) -> Callable[[GameSessionState], Awaitable[None]]:
-    async def write(state: GameSessionState) -> None:
+) -> Callable[[GameSessionState], Awaitable[int]]:
+    async def write(state: GameSessionState) -> int:
         async with sessionmaker.begin() as session:
-            await GameLogRepository(session).record_finished(state)
+            return await GameLogRepository(session).record_finished(state)
 
     return write

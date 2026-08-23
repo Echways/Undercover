@@ -347,3 +347,13 @@ async def test_the_final_screen_repeats_why_the_spies_took_it(table: Table) -> N
     await table.press(Buttons.SHOW_RESULT)
 
     assert Vote.SPIES_WIN_MISFIRE in table.card.caption
+
+
+async def test_a_game_finished_by_the_vote_gets_a_case_number(table: Table) -> None:
+    await voting(table)
+
+    await table.press(SPY_NAME)
+
+    stored = table.games.stored
+    assert stored.case_number == 1
+    assert stored.finished_at is not None

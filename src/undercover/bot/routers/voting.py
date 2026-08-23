@@ -11,7 +11,7 @@ from undercover.bot.boards import board_for
 from undercover.bot.guards import deny_non_host, load_voting
 from undercover.bot.keyboards import button, single_button
 from undercover.bot.message_utils import as_photo
-from undercover.bot.routers.finale import FinalAction, FinalCB, GameLogWriter, write_log
+from undercover.bot.routers.finale import FinalAction, FinalCB, GameLogWriter, close_case
 from undercover.bot.routers.reveal import PhaseStarter
 from undercover.bot.turn_clock import TurnKeeper
 from undercover.game.models import (
@@ -168,6 +168,7 @@ async def _announce(
     if winner is not None:
         state.status = GameStatus.FINISHED
         state.winner = winner
+        await close_case(log_game, state)
 
     image = await asyncio.to_thread(render_verdict_card, player.name, player.is_spy)
     state.current_message_id = await board_for(state).show(
@@ -178,9 +179,6 @@ async def _announce(
         _verdict_keyboard(state, winner),
     )
     await games.save(state)
-
-    if winner is not None:
-        await write_log(log_game, state)
 
 
 async def _repaint(bot: Bot, state: GameSessionState, caption: str) -> None:

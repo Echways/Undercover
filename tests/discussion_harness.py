@@ -75,10 +75,11 @@ class RecordingLog:
         self.states: list[GameSessionState] = []
         self.failure = failure
 
-    async def __call__(self, state: GameSessionState) -> None:
+    async def __call__(self, state: GameSessionState) -> int:
         self.states.append(state.model_copy(deep=True))
         if self.failure is not None:
             raise self.failure
+        return len(self.states)
 
 
 @dataclass(frozen=True, slots=True)

@@ -14,7 +14,6 @@ from undercover.media.card_renderer import (
     render_ballot_card,
     render_civilian_card,
     render_hidden_card,
-    render_result_card,
     render_speaker_card,
     render_spy_card,
     render_verdict_card,
@@ -42,7 +41,6 @@ RENDERERS: tuple[Callable[..., bytes], ...] = (
     render_civilian_card,
     render_spy_card,
     render_speaker_card,
-    render_result_card,
     render_ballot_card,
     render_verdict_card,
 )
@@ -74,12 +72,6 @@ def test_spy_card_is_a_photo_of_card_size() -> None:
 
 def test_speaker_card_is_a_photo_of_card_size() -> None:
     with open_card(render_speaker_card("Аня")) as card:
-        assert card.format == CARD_FORMAT
-        assert card.size == CARD_SIZE
-
-
-def test_result_card_is_a_photo_of_card_size() -> None:
-    with open_card(render_result_card(("Аня",), "пицца")) as card:
         assert card.format == CARD_FORMAT
         assert card.size == CARD_SIZE
 
@@ -140,10 +132,6 @@ def test_speaker_card_is_drawn_on_the_neutral_background() -> None:
     assert_same_corner(render_speaker_card("Аня"), BACKGROUND_NEUTRAL)
 
 
-def test_result_card_is_drawn_on_the_undercover_background() -> None:
-    assert_same_corner(render_result_card(("Аня",), "пицца"), BACKGROUND_UNDERCOVER)
-
-
 def test_spy_and_civilian_cards_of_one_player_differ() -> None:
     assert render_spy_card("Аня", "пицца") != render_civilian_card("Аня", "пицца")
 
@@ -154,14 +142,6 @@ def test_cards_of_different_players_differ() -> None:
 
 def test_speaker_cards_of_different_players_differ() -> None:
     assert render_speaker_card("Аня") != render_speaker_card("Боря")
-
-
-def test_result_card_names_every_spy() -> None:
-    assert render_result_card(("Аня", "Боря"), "пицца") != render_result_card(("Аня",), "пицца")
-
-
-def test_result_card_shows_the_word_that_was_played() -> None:
-    assert render_result_card(("Аня",), "пицца") != render_result_card(("Аня",), "пельмени")
 
 
 def test_same_input_renders_the_same_bytes() -> None:
@@ -183,9 +163,6 @@ def test_whitespace_around_input_does_not_change_the_card() -> None:
         (render_spy_card, (" \t ", "её режут на куски")),
         (render_spy_card, ("Аня", "")),
         (render_speaker_card, ("   ",)),
-        (render_result_card, ((), "пицца")),
-        (render_result_card, (("Аня",), " ")),
-        (render_result_card, ((" ",), "пицца")),
     ],
 )
 def test_blank_input_is_rejected(render: Callable[..., bytes], args: tuple[object, ...]) -> None:
@@ -205,20 +182,9 @@ LAYOUT_CASES: tuple[tuple[Callable[..., bytes], tuple[object, ...], str], ...] =
     (render_spy_card, (LONG_NAME, LONG_TEXT), BACKGROUND_UNDERCOVER),
     (render_speaker_card, ("Аня",), BACKGROUND_NEUTRAL),
     (render_speaker_card, (LONG_NAME,), BACKGROUND_NEUTRAL),
-    (render_result_card, (("Аня",), "пицца"), BACKGROUND_UNDERCOVER),
-    (
-        render_result_card,
-        (tuple(f"{LONG_NAME}{index}" for index in range(5)), LONG_TEXT),
-        BACKGROUND_UNDERCOVER,
-    ),
     (render_ballot_card, (), BACKGROUND_NEUTRAL),
     (render_verdict_card, ("Аня", True), BACKGROUND_UNDERCOVER),
     (render_verdict_card, (LONG_NAME, False), BACKGROUND_NEUTRAL),
-    (
-        render_result_card,
-        (tuple(f"{LONG_NAME}{index}" for index in range(5)), LONG_TEXT, Winner.SPIES),
-        BACKGROUND_UNDERCOVER,
-    ),
 )
 
 
@@ -308,7 +274,6 @@ WORDMARK_CASES: tuple[tuple[Callable[..., bytes], tuple[object, ...], str], ...]
     (render_civilian_card, ("Аня", "пицца"), BACKGROUND_NEUTRAL),
     (render_speaker_card, ("Аня",), BACKGROUND_NEUTRAL),
     (render_spy_card, ("Аня", "её режут на куски"), BACKGROUND_UNDERCOVER),
-    (render_result_card, (("Аня",), "пицца"), BACKGROUND_UNDERCOVER),
     (render_ballot_card, (), BACKGROUND_NEUTRAL),
     (render_verdict_card, ("Аня", False), BACKGROUND_NEUTRAL),
 )
@@ -375,16 +340,6 @@ def test_the_same_name_looks_different_for_a_spy_and_for_a_civilian() -> None:
 def test_a_nameless_verdict_is_rejected() -> None:
     with pytest.raises(ValueError):
         render_verdict_card("   ", is_spy=False)
-
-
-def test_the_result_card_says_who_won_when_there_is_a_winner() -> None:
-    quiet = render_result_card(("Аня",), "пицца")
-    civilians = render_result_card(("Аня",), "пицца", winner=Winner.CIVILIANS)
-    spies = render_result_card(("Аня",), "пицца", winner=Winner.SPIES)
-
-    assert quiet != civilians
-    assert civilians != spies
-    assert quiet != spies
 
 
 SUMMARY_STARTED_AT = datetime(2026, 8, 23, 20, 0, tzinfo=UTC)
