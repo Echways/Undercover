@@ -8,6 +8,7 @@ from undercover.game.voting import Refusal
 BRAND: Final = "Undercover"
 
 GAME_COMMAND: Final = "undercover"
+STATS_COMMAND: Final = "undercover_stats"
 
 
 class Start:
@@ -24,6 +25,7 @@ class Start:
     )
     COMMAND_DESCRIPTION: Final = "Новая партия"
     GAME_COMMAND_DESCRIPTION: Final = "Партия в группе"
+    STATS_COMMAND_DESCRIPTION: Final = "Зал славы чата"
 
 
 class Setup:
@@ -164,6 +166,34 @@ class Timer:
     EXPIRED: Final = "Время вышло"
 
 
+class Stats:
+    TITLE: Final = f"{BRAND} — зал славы."
+    TOTALS: Final = "Партий в этом чате: {games} — мирные взяли {civilian_wins}, шпионы {spy_wins}."
+    PRIVATE_TOTALS: Final = (
+        "Партий с этого телефона: {games} — мирные взяли {civilian_wins}, шпионы {spy_wins}."
+    )
+    SPY_OF_THE_MONTH: Final = "Шпион месяца: {name} — {value} из {total} за шпиона"
+    BEST_DETECTIVE: Final = "Лучший сыщик: {name} — {value} из {total} за мирного"
+    FIRST_VICTIM: Final = "Первая жертва: {name} — {value} {times}"
+    LONGEST_STREAK: Final = "Серия побед: {name} — {value} подряд"
+
+    NO_GAMES: Final = (
+        "Здесь ещё не доигрывали партий. Зал славы откроется, когда наберётся статистика."
+    )
+    NO_TITLES: Final = "Титулов пока нет — сыграйте ещё несколько партий."
+    PRIVATE: Final = (
+        "Зал славы ведётся в группах: там бот знает, кто есть кто.\n"
+        "Партии с одного телефона в личный зачёт не идут."
+    )
+
+    PROFILE_TOTAL: Final = "Партий: {games} · Побед: {wins} ({rate}%)"
+    PROFILE_SPY: Final = "За шпиона: {wins} из {games}"
+    PROFILE_CIVILIAN: Final = "За мирного: {wins} из {games}"
+    PROFILE_STREAK: Final = "Серия побед: {value}"
+    PROFILE_FIRST_OUTS: Final = "Вылетали первым: {value} {times}"
+    NO_PROFILE: Final = "Вы ещё не играли в этом чате."
+
+
 class Errors:
     SESSION_NOT_FOUND: Final = "Партия не найдена — похоже, она уже закончилась."
     NOT_HOST: Final = "Сейчас эта кнопка не ваша — её нажимает ведущий."
@@ -214,6 +244,9 @@ class Buttons:
     PLAY_AGAIN: Final = "Ещё партия"
     NEW_GAME: Final = "Новый состав"
 
+    HALL_OF_FAME: Final = "Зал славы"
+    MY_STATS: Final = "Моя статистика"
+
 
 class Cards:
     HIDDEN_CAPTION: Final = "ПЕРЕДАЙТЕ ТЕЛЕФОН"
@@ -245,6 +278,8 @@ class Cards:
     RESULT_WORD_CAPTION: Final = "ЗАГАДАННОЕ СЛОВО"
 
 
+TIMES: Final = ("раз", "раза", "раз")
+
 BAR_CELLS: Final = 10
 BAR_FULL: Final = "█"
 BAR_EMPTY: Final = "░"
@@ -270,6 +305,18 @@ WIN_LINES: Final[Mapping[Winner, str]] = {
 
 def empty_catalog_text(category_ids: Sequence[int]) -> str:
     return Errors.EMPTY_CATEGORIES if category_ids else Errors.EMPTY_CATALOG
+
+
+def plural(count: int, forms: tuple[str, str, str]) -> str:
+    if 11 <= count % 100 <= 14:
+        return forms[2]
+    match count % 10:
+        case 1:
+            return forms[0]
+        case 2 | 3 | 4:
+            return forms[1]
+        case _:
+            return forms[2]
 
 
 def countdown_line(seconds_left: int, total: int) -> str:

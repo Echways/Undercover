@@ -17,13 +17,15 @@ from undercover.bot.routers.lobby import create_lobby_router
 from undercover.bot.routers.reveal import create_reveal_router, start_reveal
 from undercover.bot.routers.setup_dialog import create_setup_dialog
 from undercover.bot.routers.start import create_start_router
+from undercover.bot.routers.stats import create_stats_router
 from undercover.bot.routers.voting import create_voting_router, start_voting
 from undercover.bot.turn_clock import TurnClock, TurnKeeper
 from undercover.config import Settings
 from undercover.db.repositories.game_log import game_log_writer
+from undercover.db.repositories.stats import stats_source
 from undercover.db.repositories.words import words_source
 from undercover.di import AppDependencies
-from undercover.texts import GAME_COMMAND, Start
+from undercover.texts import GAME_COMMAND, STATS_COMMAND, Start
 from undercover.utils.keyed_locks import KeyedLocks
 
 logger = logging.getLogger(__name__)
@@ -47,6 +49,7 @@ def create_dispatcher(dependencies: AppDependencies) -> Dispatcher:
     dispatcher.callback_query.outer_middleware(throttling)
 
     open_words = words_source(dependencies.sessionmaker)
+    open_stats = stats_source(dependencies.sessionmaker)
     log_game = game_log_writer(dependencies.sessionmaker)
 
     keeper = TurnKeeper(clock=TurnClock(), locks=KeyedLocks())
@@ -55,6 +58,7 @@ def create_dispatcher(dependencies: AppDependencies) -> Dispatcher:
 
     dispatcher.include_router(create_start_router(open_words))
     dispatcher.include_router(create_lobby_router(open_words, begin_discussion))
+    dispatcher.include_router(create_stats_router(open_stats))
     dispatcher.include_router(create_setup_dialog(open_words, start_reveal))
     dispatcher.include_router(create_reveal_router(begin_discussion))
     dispatcher.include_router(create_discussion_router(keeper, begin_voting))
@@ -83,8 +87,9 @@ def _create_storage(dependencies: AppDependencies) -> RedisStorage:
 async def _publish_commands(bot: Bot) -> None:
     start = BotCommand(command="start", description=Start.COMMAND_DESCRIPTION)
     game = BotCommand(command=GAME_COMMAND, description=Start.GAME_COMMAND_DESCRIPTION)
+    stats = BotCommand(command=STATS_COMMAND, description=Start.STATS_COMMAND_DESCRIPTION)
     try:
         await bot.set_my_commands([start])
-        await bot.set_my_commands([start, game], scope=BotCommandScopeAllGroupChats())
+        await bot.set_my_commands([start, game, stats], scope=BotCommandScopeAllGroupChats())
     except Exception as error:
         logger.warning("не удалось опубликовать меню команд: %s", error)

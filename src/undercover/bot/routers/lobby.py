@@ -1,12 +1,12 @@
 import logging
 from collections.abc import Sequence
-from typing import Final
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
+from undercover.bot.filters import IN_GROUP
 from undercover.bot.lobby_view import LobbyAction, LobbyCB, join_link, render_lobby
 from undercover.bot.message_utils import show_or_resend_text
 from undercover.bot.role_delivery import deliver_roles
@@ -35,8 +35,6 @@ from undercover.utils.secure_random import secure_rng
 
 logger = logging.getLogger(__name__)
 
-GROUP_CHATS: Final = frozenset({"group", "supergroup"})
-
 
 def create_lobby_router(open_catalog: CatalogFactory, start_discussion: PhaseStarter) -> Router:
     router = Router(name="lobby")
@@ -44,7 +42,7 @@ def create_lobby_router(open_catalog: CatalogFactory, start_discussion: PhaseSta
     async def redraw(bot: Bot, lobbies: LobbyRepository, lobby: LobbyState) -> None:
         await render_lobby(bot, lobbies, lobby, await _categories(open_catalog))
 
-    @router.message(Command(GAME_COMMAND), F.chat.type.in_(GROUP_CHATS))
+    @router.message(Command(GAME_COMMAND), IN_GROUP)
     async def cmd_game(
         message: Message, bot: Bot, games: GameStateRepository, lobbies: LobbyRepository
     ) -> None:

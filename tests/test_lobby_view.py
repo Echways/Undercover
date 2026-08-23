@@ -2,6 +2,7 @@ from typing import Final
 
 from fake_words import catalog
 from undercover.bot.lobby_view import LobbyAction, LobbyCB, lobby_keyboard, lobby_text
+from undercover.bot.stats_view import StatsAction, StatsCB
 from undercover.game.engine import MAX_PLAYERS
 from undercover.game.models import DEFAULT_TURN_SECONDS, LobbyPlayer, LobbyState, LobbyView
 from undercover.texts import Buttons, Lobby
@@ -48,15 +49,34 @@ def test_the_summary_lists_the_chosen_categories_by_title() -> None:
     assert "Города" not in text
 
 
-def test_the_roster_keyboard_carries_join_leave_settings_and_start() -> None:
+def test_the_roster_keyboard_carries_join_leave_settings_hall_and_start() -> None:
     assert texts_of(lobby(2)) == [
         Buttons.JOIN_LOBBY,
         Buttons.LEAVE_LOBBY,
         Buttons.SPIES_COUNT.format(count=1),
         Buttons.TURN_LIMIT.format(seconds=DEFAULT_TURN_SECONDS),
         Buttons.CHANGE_CATEGORIES,
+        Buttons.HALL_OF_FAME,
         Buttons.PLAY,
     ]
+
+
+def test_the_roster_offers_the_hall_of_fame() -> None:
+    assert Buttons.HALL_OF_FAME in texts_of(lobby(3))
+
+
+def test_the_hall_of_fame_button_carries_the_stats_callback() -> None:
+    rows = lobby_keyboard(lobby(3), CATALOG).inline_keyboard
+    (item,) = next(row for row in rows if row[0].text == Buttons.HALL_OF_FAME)
+
+    assert item.callback_data == StatsCB(action=StatsAction.BOARD).pack()
+
+
+def test_the_hall_of_fame_does_not_crowd_the_start_button() -> None:
+    rows = lobby_keyboard(lobby(3), CATALOG).inline_keyboard
+    last_two = [[item.text for item in row] for row in rows[-2:]]
+
+    assert last_two == [[Buttons.HALL_OF_FAME], [Buttons.PLAY]]
 
 
 def test_a_one_category_dictionary_offers_no_choice() -> None:

@@ -9,6 +9,7 @@ from aiogram.utils.deep_linking import create_start_link
 
 from undercover.bot.keyboards import button
 from undercover.bot.message_utils import show_or_resend_text
+from undercover.bot.stats_view import StatsAction, StatsCB
 from undercover.game.engine import MAX_PLAYERS, CategoryRecord
 from undercover.game.models import LobbyState, LobbyView
 from undercover.redis.lobby_state import LobbyRepository
@@ -115,6 +116,7 @@ def _roster_keyboard(
                 _lobby_button(Buttons.LEAVE_LOBBY, LobbyAction.LEAVE),
             ],
             settings,
+            [button(Buttons.HALL_OF_FAME, StatsCB(action=StatsAction.BOARD))],
             [_lobby_button(Buttons.PLAY, LobbyAction.PLAY)],
         ]
     )

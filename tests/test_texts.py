@@ -33,6 +33,7 @@ SCREENS = (
     texts.Discussion,
     texts.Vote,
     texts.Timer,
+    texts.Stats,
     texts.Errors,
     texts.Cards,
 )
@@ -129,6 +130,30 @@ def test_the_guard_notices_an_emoji_that_slipped_back() -> None:
     assert PICTOGRAPH.search("\u25b6\ufe0f Играть")
     assert PICTOGRAPH.search("\U0001f575\ufe0f Показать шпиона")
     assert not PICTOGRAPH.search("«Пётр» уже в составе — добавьте прозвище…")
+
+
+def test_the_hall_of_fame_speaks_of_the_brand() -> None:
+    assert texts.BRAND in texts.Stats.TITLE
+
+
+@pytest.mark.parametrize(
+    ("count", "expected"),
+    [
+        (1, "раз"),
+        (2, "раза"),
+        (4, "раза"),
+        (5, "раз"),
+        (11, "раз"),
+        (12, "раз"),
+        (14, "раз"),
+        (21, "раз"),
+        (22, "раза"),
+        (112, "раз"),
+        (121, "раз"),
+    ],
+)
+def test_the_count_of_falls_agrees_with_the_number(count: int, expected: str) -> None:
+    assert texts.plural(count, texts.TIMES) == expected
 
 
 def test_the_brand_is_written_in_latin() -> None:
