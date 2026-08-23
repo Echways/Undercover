@@ -13,8 +13,9 @@ from fake_games import FakeGameStateRepository
 from fake_lobbies import FakeLobbyRepository
 from fake_words import FakeWords, catalog, pizza
 from lobby_harness import Group
-from undercover.bot.routers.discussion import start_discussion
+from undercover.bot.routers.discussion import TurnFlow, start_discussion
 from undercover.bot.routers.lobby import create_lobby_router
+from undercover.bot.routers.voting import start_voting
 from undercover.bot.turn_clock import KeyedLocks, TurnClock, TurnKeeper
 from undercover.game.models import (
     DEFAULT_TURN_SECONDS,
@@ -43,9 +44,10 @@ async def group(words: FakeWords) -> AsyncIterator[Group]:
     games = FakeGameStateRepository()
     lobbies = FakeLobbyRepository()
     keeper = TurnKeeper(clock=TurnClock(tick=IDLE_TICK), locks=KeyedLocks())
+    flow = TurnFlow(keeper=keeper, start_voting=partial(start_voting, keeper=keeper))
     dispatcher = Dispatcher(games=games, lobbies=lobbies)
     dispatcher.include_router(
-        create_lobby_router(words.cached(), partial(start_discussion, keeper=keeper))
+        create_lobby_router(words.cached(), partial(start_discussion, flow=flow))
     )
 
     yield Group(

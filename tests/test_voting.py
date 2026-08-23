@@ -282,7 +282,7 @@ async def speak_out_the_round(table: Table) -> None:
 async def test_a_whole_game_runs_from_the_first_round_to_a_victory(table: Table) -> None:
     state = make_state()
     await table.games.save(state)
-    await start_discussion(table.bot, table.games, state, table.keeper)
+    await start_discussion(table.bot, table.games, state, table.flow)
 
     await speak_out_the_round(table)
     await table.press(Buttons.GO_TO_VOTE)

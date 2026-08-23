@@ -88,7 +88,7 @@ class TurnClock:
 
     def stop(self, session_id: str) -> None:
         task = self._tasks.pop(session_id, None)
-        if task is not None:
+        if task is not None and task is not asyncio.current_task():
             task.cancel()
 
     async def shutdown(self) -> None:

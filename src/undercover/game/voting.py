@@ -1,4 +1,4 @@
-from collections.abc import Hashable, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
@@ -96,6 +96,14 @@ def direction_result(state: GameSessionState) -> Direction | None:
     return Direction.ROUND if given >= total else None
 
 
+def settle_direction(state: GameSessionState) -> Direction:
+    ballot = state.ballot
+    if not isinstance(ballot, DirectionBallot):
+        return Direction.ROUND
+    leaders = _leaders(tally(ballot))
+    return leaders[0] if len(leaders) == 1 else Direction.ROUND
+
+
 def elimination_result(state: GameSessionState) -> Verdict | None:
     ballot = state.ballot
     if not isinstance(ballot, EliminationBallot):
@@ -106,8 +114,7 @@ def elimination_result(state: GameSessionState) -> Verdict | None:
         return None
 
     counts = tally(ballot)
-    best = max(counts.values())
-    leaders = tuple(option for option, count in counts.items() if count == best)
+    leaders = _leaders(counts)
     if len(leaders) == 1:
         return Verdict(counts=counts, eliminated=leaders[0])
     return Verdict(counts=counts) if ballot.revote else Verdict(counts=counts, revote=leaders)
@@ -141,6 +148,11 @@ def misfired(state: GameSessionState) -> bool:
     return state.ruleset is Ruleset.SUDDEN_DEATH and any(
         player.out_order == FIRST_OUT and not player.is_spy for player in state.players
     )
+
+
+def _leaders[OptionT: Hashable](counts: Mapping[OptionT, int]) -> tuple[OptionT, ...]:
+    best = max(counts.values())
+    return tuple(option for option, count in counts.items() if count == best)
 
 
 def _record[OptionT: Hashable](

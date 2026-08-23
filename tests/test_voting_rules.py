@@ -28,6 +28,7 @@ from undercover.game.voting import (
     open_direction_ballot,
     open_elimination_ballot,
     outcome,
+    settle_direction,
     tally,
     turnout,
 )
@@ -242,6 +243,33 @@ def test_the_hot_seat_host_decides_the_direction_with_one_tap() -> None:
 
 def test_there_is_no_direction_without_a_ballot() -> None:
     assert direction_result(make_state()) is None
+
+
+def test_a_timed_out_ballot_follows_the_leading_option() -> None:
+    state = make_state()
+    open_direction_ballot(state)
+    steer(state, {100: Direction.VOTE, 101: Direction.VOTE, 102: Direction.ROUND})
+
+    assert settle_direction(state) is Direction.VOTE
+
+
+def test_a_timed_out_tie_keeps_the_table_talking() -> None:
+    state = make_state()
+    open_direction_ballot(state)
+    steer(state, {100: Direction.VOTE, 101: Direction.ROUND})
+
+    assert settle_direction(state) is Direction.ROUND
+
+
+def test_a_timed_out_ballot_nobody_touched_keeps_the_table_talking() -> None:
+    state = make_state()
+    open_direction_ballot(state)
+
+    assert settle_direction(state) is Direction.ROUND
+
+
+def test_there_is_nothing_to_settle_without_a_ballot() -> None:
+    assert settle_direction(make_state()) is Direction.ROUND
 
 
 def test_the_elimination_stays_silent_until_everyone_has_voted() -> None:

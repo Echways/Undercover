@@ -22,6 +22,7 @@ from undercover.di import AppDependencies, build_dependencies
 EXPECTED_ROUTERS: Final = (
     "start",
     "lobby",
+    "reset",
     "stats",
     "Setup",
     "reveal",
@@ -123,7 +124,7 @@ async def test_group_chats_see_the_game_command_in_the_menu(dispatcher: Dispatch
         if isinstance(call.scope, BotCommandScopeAllGroupChats)
     ]
     assert [[command.command for command in call.commands] for call in group_menus] == [
-        ["start", "undercover", "undercover_stats"]
+        ["start", "undercover", "undercover_stats", "undercover_reset"]
     ]
 
 

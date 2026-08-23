@@ -9,6 +9,7 @@ from undercover.bot.dispatcher import (
     resolve_allowed_updates,
 )
 from undercover.config import ConfigurationError, load_settings
+from undercover.db.schema import SchemaUpgradeError, upgrade_to_head
 from undercover.di import DependencyUnavailableError, build_dependencies
 from undercover.log import DEFAULT_LEVEL, configure_logging
 
@@ -19,6 +20,7 @@ STARTUP_FAILURES = (
     DependencyUnavailableError,
     TelegramUnauthorizedError,
     TelegramNetworkError,
+    SchemaUpgradeError,
 )
 
 
@@ -41,6 +43,7 @@ async def _run() -> None:
     bot = create_bot(settings)
     try:
         await dependencies.check_connections()
+        await upgrade_to_head(dependencies.engine)
         dispatcher = create_dispatcher(dependencies)
         logger.info("Undercover: запускаем опрос Telegram")
         await dispatcher.start_polling(
@@ -58,6 +61,8 @@ def _reason(error: Exception) -> str:
         return "Telegram отклонил BOT_TOKEN — проверьте токен от @BotFather"
     if isinstance(error, TelegramNetworkError):
         return f"нет связи с Telegram: {error}"
+    if isinstance(error, SchemaUpgradeError):
+        return f"не удалось обновить схему базы: {error}"
     return str(error)
 
 

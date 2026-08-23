@@ -11,9 +11,14 @@ from aiogram_dialog import setup_dialogs
 
 from undercover.bot.errors import create_error_router
 from undercover.bot.middlewares.throttling import ThrottlingMiddleware
-from undercover.bot.routers.discussion import create_discussion_router, start_discussion
+from undercover.bot.routers.discussion import (
+    TurnFlow,
+    create_discussion_router,
+    start_discussion,
+)
 from undercover.bot.routers.finale import create_finale_router
 from undercover.bot.routers.lobby import create_lobby_router
+from undercover.bot.routers.reset import create_reset_router
 from undercover.bot.routers.reveal import create_reveal_router, start_reveal
 from undercover.bot.routers.setup_dialog import create_setup_dialog
 from undercover.bot.routers.start import create_start_router
@@ -26,7 +31,7 @@ from undercover.db.repositories.stats import stats_source
 from undercover.db.repositories.words import words_source
 from undercover.di import AppDependencies
 from undercover.game.catalog import CachedCatalog
-from undercover.texts import GAME_COMMAND, STATS_COMMAND, Start
+from undercover.texts import GAME_COMMAND, RESET_COMMAND, STATS_COMMAND, Start
 
 logger = logging.getLogger(__name__)
 
@@ -54,15 +59,17 @@ def create_dispatcher(dependencies: AppDependencies) -> Dispatcher:
     log_game = game_log_writer(dependencies.sessionmaker)
 
     keeper = TurnKeeper(clock=TurnClock(), locks=KeyedLocks())
-    begin_discussion = partial(start_discussion, keeper=keeper)
     begin_voting = partial(start_voting, keeper=keeper)
+    flow = TurnFlow(keeper=keeper, start_voting=begin_voting)
+    begin_discussion = partial(start_discussion, flow=flow)
 
     dispatcher.include_router(create_start_router(catalog))
     dispatcher.include_router(create_lobby_router(catalog, begin_discussion))
+    dispatcher.include_router(create_reset_router(keeper))
     dispatcher.include_router(create_stats_router(open_stats))
     dispatcher.include_router(create_setup_dialog(catalog, start_reveal))
     dispatcher.include_router(create_reveal_router(begin_discussion))
-    dispatcher.include_router(create_discussion_router(keeper, begin_voting))
+    dispatcher.include_router(create_discussion_router(flow))
     dispatcher.include_router(create_voting_router(keeper, begin_discussion, log_game))
     dispatcher.include_router(create_finale_router(open_words, log_game, keeper, begin_discussion))
     dispatcher.include_router(create_error_router())
@@ -89,8 +96,9 @@ async def _publish_commands(bot: Bot) -> None:
     start = BotCommand(command="start", description=Start.COMMAND_DESCRIPTION)
     game = BotCommand(command=GAME_COMMAND, description=Start.GAME_COMMAND_DESCRIPTION)
     stats = BotCommand(command=STATS_COMMAND, description=Start.STATS_COMMAND_DESCRIPTION)
+    reset = BotCommand(command=RESET_COMMAND, description=Start.RESET_COMMAND_DESCRIPTION)
     try:
         await bot.set_my_commands([start])
-        await bot.set_my_commands([start, game, stats], scope=BotCommandScopeAllGroupChats())
+        await bot.set_my_commands([start, game, stats, reset], scope=BotCommandScopeAllGroupChats())
     except Exception as error:
         logger.warning("не удалось опубликовать меню команд: %s", error)
