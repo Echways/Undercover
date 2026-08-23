@@ -17,16 +17,23 @@ from discussion_harness import (
     spoken_names,
     table,
     talking,
+    ticking_table,
     words,
 )
 from fake_bot import CHAT_ID, HOST_ID
 from fake_words import WORD, pizza
-from undercover.bot.routers.discussion import DIRECTIONS, TalkAction, TalkCB, expiry_handler
+from undercover.bot.routers.discussion import (
+    DIRECTIONS,
+    TalkAction,
+    TalkCB,
+    close_turn,
+    expiry_handler,
+)
 from undercover.bot.turn_clock import Turn
 from undercover.game.models import Direction, DirectionBallot, GameMode, GameStatus
 from undercover.texts import BAR_EMPTY, Buttons, Discussion, Errors, Timer, Vote, countdown_line
 
-__all__ = ["log", "table", "words"]
+__all__ = ["log", "table", "ticking_table", "words"]
 
 
 async def test_the_whole_game_from_setup_to_the_final_screen(table: Table) -> None:
@@ -354,45 +361,6 @@ async def test_an_expired_turn_moves_on_by_itself(table: Table) -> None:
     assert frozen.reply_markup is None
 
 
-async def test_an_expired_last_turn_starts_another_round(table: Table) -> None:
-    state = await all_spoken(table, mode=GameMode.GROUP, turn_seconds=60)
-    frozen_before = len(table.session.calls(EditMessageCaption))
-    on_expire = expiry_handler(table.games, table.flow)
-
-    await on_expire(table.bot, Turn(SESSION_ID, state.discussion_round, state.discussion_cursor))
-
-    frozen = table.session.calls(EditMessageCaption)[frozen_before]
-    assert Timer.EXPIRED in (frozen.caption or "")
-    stored = table.games.stored
-    assert stored.discussion_round == 2
-    assert stored.discussion_cursor == 0
-
-
-async def test_an_expired_last_turn_obeys_the_votes_already_cast(table: Table) -> None:
-    ids = (HOST_ID, 22, 33, 44)
-    state = await all_spoken(table, ids=ids, mode=GameMode.GROUP, turn_seconds=60)
-    await table.tap(table.card.callback_data(Buttons.GO_TO_VOTE), user_id=22)
-    on_expire = expiry_handler(table.games, table.flow)
-
-    await on_expire(table.bot, Turn(SESSION_ID, state.discussion_round, state.discussion_cursor))
-
-    assert table.games.stored.status is GameStatus.VOTING
-
-
-async def test_an_expired_split_vote_falls_back_to_another_round(table: Table) -> None:
-    ids = (HOST_ID, 22, 33, 44)
-    state = await all_spoken(table, ids=ids, mode=GameMode.GROUP, turn_seconds=60)
-    await table.tap(table.card.callback_data(Buttons.GO_TO_VOTE), user_id=22)
-    await table.tap(table.card.callback_data(Buttons.ANOTHER_ROUND), user_id=33)
-    on_expire = expiry_handler(table.games, table.flow)
-
-    await on_expire(table.bot, Turn(SESSION_ID, state.discussion_round, state.discussion_cursor))
-
-    stored = table.games.stored
-    assert stored.status is GameStatus.DISCUSSION
-    assert stored.discussion_round == 2
-
-
 async def test_a_stale_tick_is_ignored(table: Table) -> None:
     await talking(table, mode=GameMode.GROUP, turn_seconds=60)
     await table.press(Buttons.NEXT_SPEAKER)
@@ -593,3 +561,72 @@ def test_every_direction_is_reachable_from_a_button() -> None:
 
 def test_only_the_direction_buttons_cast_a_direction() -> None:
     assert set(DIRECTIONS) == {TalkAction.ROUND, TalkAction.VOTE}
+
+
+async def test_the_countdown_leaves_a_frozen_card_frozen(ticking_table: Table) -> None:
+    table = ticking_table
+    await talking(table, mode=GameMode.GROUP, turn_seconds=60)
+    closed_id = table.games.stored.current_message_id
+
+    await table.press(Buttons.NEXT_SPEAKER)
+    await asyncio.sleep(0.1)
+
+    edits = [
+        call for call in table.session.calls(EditMessageCaption) if call.message_id == closed_id
+    ]
+    assert edits, "закрытая карточка должна была замереть хотя бы раз"
+    assert edits[-1].reply_markup is None, "часы вернули кнопки на уже закрытую карточку"
+    assert Timer.SPENT.split("{")[0] in (edits[-1].caption or "")
+
+
+async def test_closing_a_turn_silences_its_clock(table: Table) -> None:
+    state = await talking(table, mode=GameMode.GROUP, turn_seconds=60)
+    assert table.keeper.clock.running == frozenset({SESSION_ID})
+
+    await close_turn(table.bot, state, Timer.EXPIRED, table.flow)
+
+    assert table.keeper.clock.running == frozenset()
+
+
+async def test_an_expired_last_turn_waits_for_a_decision(table: Table) -> None:
+    state = await all_spoken(table, mode=GameMode.GROUP, turn_seconds=60)
+    on_expire = expiry_handler(table.games, table.flow)
+
+    await on_expire(table.bot, Turn(SESSION_ID, state.discussion_round, state.discussion_cursor))
+
+    stored = table.games.stored
+    assert stored.discussion_round == 1, "сам по себе новый круг не начинается"
+    assert stored.discussion_cursor == len(stored.discussion_order) - 1
+    assert isinstance(stored.ballot, DirectionBallot), "голосовать за направление всё ещё можно"
+
+
+async def test_an_expired_last_turn_keeps_the_direction_buttons(table: Table) -> None:
+    state = await all_spoken(table, mode=GameMode.GROUP, turn_seconds=60)
+    on_expire = expiry_handler(table.games, table.flow)
+
+    await on_expire(table.bot, Turn(SESSION_ID, state.discussion_round, state.discussion_cursor))
+
+    frozen = table.session.calls(EditMessageCaption)[-1]
+    assert Timer.EXPIRED in (frozen.caption or "")
+    assert repainted_texts(table) == {
+        Buttons.ANOTHER_ROUND,
+        Buttons.GO_TO_VOTE,
+        Buttons.SHOW_SPIES,
+    }
+
+
+async def test_the_table_can_still_vote_after_the_last_turn_expired(table: Table) -> None:
+    ids = (HOST_ID, 22, 33, 44)
+    state = await all_spoken(table, ids=ids, mode=GameMode.GROUP, turn_seconds=60)
+    on_expire = expiry_handler(table.games, table.flow)
+    await on_expire(table.bot, Turn(SESSION_ID, state.discussion_round, state.discussion_cursor))
+
+    for voter in (HOST_ID, 22, 33):
+        await table.tap(
+            TalkCB(
+                action=TalkAction.VOTE, session_id=SESSION_ID, cursor=state.discussion_cursor
+            ).pack(),
+            user_id=voter,
+        )
+
+    assert table.games.stored.status is GameStatus.VOTING

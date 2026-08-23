@@ -192,6 +192,11 @@ async def joined(group: Group, *user_ids: int) -> None:
         await group.press(Buttons.JOIN_LOBBY, user_id=user_id)
 
 
+async def seated(group: Group, *user_ids: int) -> None:
+    """Состав, готовый играть: ведущий за столом наравне со всеми."""
+    await joined(group, HOST_ID, *user_ids)
+
+
 async def test_the_spies_button_walks_the_allowed_range_and_wraps(group: Group) -> None:
     await joined(group, *range(100, 106))
 
@@ -241,20 +246,24 @@ async def test_a_category_button_from_a_stranger_changes_nothing(group: Group) -
 
 
 async def test_a_started_game_hands_out_roles_and_opens_the_first_turn(group: Group) -> None:
-    await joined(group, GUEST_ID, OTHER_ID)
+    await seated(group, GUEST_ID, OTHER_ID)
 
     await group.press(Buttons.PLAY)
 
     state = group.games.stored
     assert state.mode is GameMode.GROUP
-    assert sorted(player.user_id or 0 for player in state.players) == [GUEST_ID, OTHER_ID]
+    assert sorted(player.user_id or 0 for player in state.players) == [
+        GUEST_ID,
+        OTHER_ID,
+        HOST_ID,
+    ]
     assert {call.chat_id for call in group.session.calls(SendPhoto)} >= {GUEST_ID, OTHER_ID}
     assert group.lobbies.is_empty
     assert Lobby.STARTED in [screen.text for screen in group.screens]
 
 
 async def test_the_first_turn_lands_in_the_group_chat(group: Group) -> None:
-    await joined(group, GUEST_ID, OTHER_ID)
+    await seated(group, GUEST_ID, OTHER_ID)
 
     await group.press(Buttons.PLAY)
 
@@ -263,7 +272,7 @@ async def test_the_first_turn_lands_in_the_group_chat(group: Group) -> None:
 
 
 async def test_the_lobby_settings_reach_the_session(group: Group) -> None:
-    await joined(group, *range(100, 106))
+    await seated(group, *range(100, 106))
     await group.press(Buttons.SPIES_COUNT.format(count=1))
     await group.press(Buttons.CHANGE_CATEGORIES)
     await group.press(Lobby.CATEGORY_FREE.format(title="Еда"))
@@ -285,8 +294,18 @@ async def test_a_table_of_one_cannot_start(group: Group) -> None:
     assert group.lobbies.stored.players != []
 
 
-async def test_only_the_host_starts_the_game(group: Group) -> None:
+async def test_a_host_who_never_joined_cannot_start_the_game(group: Group) -> None:
     await joined(group, GUEST_ID, OTHER_ID)
+
+    await group.press(Buttons.PLAY)
+
+    assert group.games.is_empty
+    assert len(group.lobbies.stored.players) == 2, "состав не разбирается"
+    assert group.alerts, "ведущему объясняют, что сначала надо сесть за стол"
+
+
+async def test_only_the_host_starts_the_game(group: Group) -> None:
+    await seated(group, GUEST_ID, OTHER_ID)
 
     await group.press(Buttons.PLAY, user_id=GUEST_ID)
 
@@ -295,7 +314,7 @@ async def test_only_the_host_starts_the_game(group: Group) -> None:
 
 
 async def test_an_undelivered_role_cancels_the_start_and_keeps_the_lobby(group: Group) -> None:
-    await joined(group, GUEST_ID, OTHER_ID)
+    await seated(group, GUEST_ID, OTHER_ID)
     group.session.failures[SendPhoto] = TelegramForbiddenError(
         method=SendPhoto(chat_id=GUEST_ID, photo="x"), message="bot was blocked by the user"
     )
@@ -303,7 +322,7 @@ async def test_an_undelivered_role_cancels_the_start_and_keeps_the_lobby(group: 
     await group.press(Buttons.PLAY)
 
     assert group.games.is_empty
-    assert len(group.lobbies.stored.players) == 2
+    assert len(group.lobbies.stored.players) == 3
     assert Lobby.DELIVERY_FAILED in group.alerts
     assert any("start=join_" in (text or "") for text in replies(group))
 
@@ -311,17 +330,17 @@ async def test_an_undelivered_role_cancels_the_start_and_keeps_the_lobby(group: 
 async def test_an_empty_dictionary_stops_the_start_without_losing_the_roster(
     group: Group,
 ) -> None:
-    await joined(group, GUEST_ID, OTHER_ID)
+    await seated(group, GUEST_ID, OTHER_ID)
     group.words.word = None
 
     await group.press(Buttons.PLAY)
 
     assert group.games.is_empty
-    assert len(group.lobbies.stored.players) == 2
+    assert len(group.lobbies.stored.players) == 3
 
 
 async def test_the_chosen_turn_length_reaches_the_session(group: Group) -> None:
-    await joined(group, GUEST_ID, OTHER_ID)
+    await seated(group, GUEST_ID, OTHER_ID)
 
     await group.press(Buttons.TURN_LIMIT.format(seconds=DEFAULT_TURN_SECONDS))
     chosen = group.lobbies.stored.turn_seconds
@@ -365,7 +384,7 @@ async def test_only_the_host_switches_the_ruleset(group: Group) -> None:
 
 
 async def test_the_chosen_ruleset_reaches_the_session(group: Group) -> None:
-    await joined(group, GUEST_ID, OTHER_ID)
+    await seated(group, GUEST_ID, OTHER_ID)
     await group.press(ruleset_button(Ruleset.CLASSIC))
 
     await group.press(Buttons.PLAY)

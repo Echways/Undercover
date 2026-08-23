@@ -96,14 +96,6 @@ def direction_result(state: GameSessionState) -> Direction | None:
     return Direction.ROUND if given >= total else None
 
 
-def settle_direction(state: GameSessionState) -> Direction:
-    ballot = state.ballot
-    if not isinstance(ballot, DirectionBallot):
-        return Direction.ROUND
-    leaders = _leaders(tally(ballot))
-    return leaders[0] if len(leaders) == 1 else Direction.ROUND
-
-
 def elimination_result(state: GameSessionState) -> Verdict | None:
     ballot = state.ballot
     if not isinstance(ballot, EliminationBallot):

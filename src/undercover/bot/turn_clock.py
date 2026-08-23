@@ -80,6 +80,8 @@ class TurnClock:
         self.stop(state.session_id)
         if state.turn_seconds <= 0 or state.turn_deadline is None:
             return
+        if state.turn_deadline <= datetime.now(UTC):
+            return
 
         session_id = state.session_id
         task = asyncio.create_task(self._run(bot, state.model_copy(deep=True), view, on_expire))
