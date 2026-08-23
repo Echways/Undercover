@@ -25,7 +25,6 @@ from undercover.game.voting import (
     close_ballot,
     direction_result,
     open_direction_ballot,
-    settle_direction,
     tally,
 )
 from undercover.media.card_renderer import CARD_SUFFIX, render_speaker_card
@@ -88,7 +87,7 @@ def create_discussion_router(flow: TurnFlow) -> Router:
                 await report_broken(callback, state)
                 return
 
-            await close_turn(bot, state, _spent(state))
+            await close_turn(bot, state, _spent(state), flow)
             await open_turn(bot, games, state, next_cursor, flow)
             await callback.answer()
 
@@ -175,8 +174,10 @@ async def close_turn(
     bot: Bot,
     state: GameSessionState,
     marker: str,
+    flow: TurnFlow,
     keyboard: InlineKeyboardMarkup | None = None,
 ) -> None:
+    flow.keeper.clock.stop(state.session_id)
     caption = speaker_caption(state, state.discussion_cursor)
     await board_for(state).revise(
         bot, state, f"{caption}\n{marker}" if marker else caption, keyboard
@@ -191,7 +192,7 @@ async def follow_direction(
     flow: TurnFlow,
     marker: str,
 ) -> None:
-    await close_turn(bot, state, marker)
+    await close_turn(bot, state, marker, flow)
     if chosen is Direction.VOTE:
         await flow.start_voting(bot, games, state)
         return
@@ -234,17 +235,19 @@ async def _expire_turn(games: GameStateRepository, flow: TurnFlow, bot: Bot, tur
 
         next_cursor = state.discussion_cursor + 1
         if next_cursor >= len(state.discussion_order):
-            chosen = settle_direction(state)
-            if _leads_nowhere(state, chosen):
-                _report_broken_order(state)
-                return
-            await follow_direction(bot, games, state, chosen, flow, Timer.EXPIRED)
+            await close_turn(
+                bot,
+                state,
+                Timer.EXPIRED,
+                flow,
+                _speaker_keyboard(state, state.discussion_cursor, is_last=True),
+            )
             return
         if _speaker_name(state, next_cursor) is None:
             _report_broken_order(state)
             return
 
-        await close_turn(bot, state, Timer.EXPIRED)
+        await close_turn(bot, state, Timer.EXPIRED, flow)
         await open_turn(bot, games, state, next_cursor, flow)
 
 

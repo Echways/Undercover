@@ -125,6 +125,13 @@ def test_ensure_playable_passes_the_minimum_table() -> None:
     ensure_playable(lobby(MIN_PLAYERS))
 
 
+def test_ensure_playable_refuses_a_table_its_host_never_joined() -> None:
+    state = lobby(MIN_PLAYERS, host_user_id=HOST_ID - 1)
+
+    with pytest.raises(GameRulesError):
+        ensure_playable(state)
+
+
 def test_unique_name_leaves_a_free_name_alone() -> None:
     assert unique_name("Аня", taken=["Борис"]) == "Аня"
 

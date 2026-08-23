@@ -217,3 +217,16 @@ async def test_stopping_a_clock_from_the_outside_still_cancels_it() -> None:
 
     assert clock.running == frozenset()
     assert expiries.turns == []
+
+
+async def test_a_turn_whose_deadline_has_already_passed_starts_no_countdown() -> None:
+    session = FakeSession()
+    clock = TurnClock(tick=TICK)
+    expiries = Expiries()
+
+    clock.start(make_bot(session), make_state(seconds=-1), VIEW, expiries)
+    await asyncio.sleep(0.2)
+
+    assert clock.running == frozenset()
+    assert expiries.turns == [], "истёкшему ходу нечего отсчитывать"
+    assert session.requests == []

@@ -183,7 +183,7 @@ class Discussion:
 
 class Vote:
     DIRECTION_TALLY: Final = "Ещё круг — {round}, голосуем — {vote}"
-    DIRECTION_PROMPT: Final = "Решает большинство. Не решите — рассудит таймер."
+    DIRECTION_PROMPT: Final = "Решает большинство. Пока не решите — партия ждёт."
     COUNTED: Final = "Голос учтён."
     HOT_SEAT_PROMPT: Final = "Стол решил — отметьте, кто выбывает."
     PROGRESS: Final = "Проголосовали {given} из {total}"

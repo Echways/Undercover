@@ -38,6 +38,7 @@ from undercover.texts import Buttons, Discussion, Vote
 
 SESSION_ID: Final = "11111111-1111-1111-1111-111111111111"
 IDLE_TICK: Final = timedelta(minutes=1)
+LIVE_TICK: Final = timedelta(seconds=0.02)
 NAMES: Final = ("Аня", "Борис", "Вера", "Галя")
 SPY_INDEX: Final = 1
 HINT: Final = "её режут на куски"
@@ -195,12 +196,11 @@ def log() -> RecordingLog:
     return RecordingLog()
 
 
-@pytest.fixture
-async def table(words: FakeWords, log: RecordingLog) -> AsyncIterator[Table]:
+async def lay_table(words: FakeWords, log: RecordingLog, tick: timedelta) -> AsyncIterator[Table]:
     session = FakeSession()
     bot = make_bot(session)
     games = FakeGameStateRepository()
-    keeper = TurnKeeper(clock=TurnClock(tick=IDLE_TICK), locks=KeyedLocks())
+    keeper = TurnKeeper(clock=TurnClock(tick=tick), locks=KeyedLocks())
     begin_voting = partial(start_voting, keeper=keeper)
     flow = TurnFlow(keeper=keeper, start_voting=begin_voting)
     begin_discussion = partial(start_discussion, flow=flow)
@@ -228,6 +228,18 @@ async def table(words: FakeWords, log: RecordingLog) -> AsyncIterator[Table]:
     )
 
     await keeper.clock.shutdown()
+
+
+@pytest.fixture
+async def table(words: FakeWords, log: RecordingLog) -> AsyncIterator[Table]:
+    async for ready in lay_table(words, log, IDLE_TICK):
+        yield ready
+
+
+@pytest.fixture
+async def ticking_table(words: FakeWords, log: RecordingLog) -> AsyncIterator[Table]:
+    async for ready in lay_table(words, log, LIVE_TICK):
+        yield ready
 
 
 async def talking(table: Table, **overrides: Any) -> GameSessionState:

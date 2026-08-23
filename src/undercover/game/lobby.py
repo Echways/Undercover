@@ -56,6 +56,8 @@ def toggle_category(lobby: LobbyState, category_id: int) -> None:
 def ensure_playable(lobby: LobbyState) -> None:
     if len(lobby.players) < MIN_PLAYERS:
         raise GameRulesError(f"для партии нужно хотя бы {MIN_PLAYERS} игрока")
+    if lobby.index_of(lobby.host_user_id) is None:
+        raise GameRulesError("ведущий играет со всеми — жмите «Я в игре», потом начинайте")
     _clamp_spies(lobby)
 
 

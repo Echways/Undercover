@@ -28,7 +28,6 @@ from undercover.game.voting import (
     open_direction_ballot,
     open_elimination_ballot,
     outcome,
-    settle_direction,
     tally,
     turnout,
 )
@@ -84,7 +83,7 @@ def test_the_hot_seat_electorate_is_the_host_alone() -> None:
 
 
 def test_a_group_player_without_a_telegram_id_cannot_vote() -> None:
-    state = make_state()
+    state = make_state(host_user_id=100)
     state.players[2].user_id = None
 
     assert electorate(state) == [100, 101, 103]
@@ -218,7 +217,7 @@ def test_the_direction_is_settled_by_half_the_table_plus_one() -> None:
 
 
 def test_an_evenly_split_table_keeps_talking() -> None:
-    state = make_state()
+    state = make_state(host_user_id=100)
     open_direction_ballot(state)
     steer(
         state,
@@ -243,33 +242,6 @@ def test_the_hot_seat_host_decides_the_direction_with_one_tap() -> None:
 
 def test_there_is_no_direction_without_a_ballot() -> None:
     assert direction_result(make_state()) is None
-
-
-def test_a_timed_out_ballot_follows_the_leading_option() -> None:
-    state = make_state()
-    open_direction_ballot(state)
-    steer(state, {100: Direction.VOTE, 101: Direction.VOTE, 102: Direction.ROUND})
-
-    assert settle_direction(state) is Direction.VOTE
-
-
-def test_a_timed_out_tie_keeps_the_table_talking() -> None:
-    state = make_state()
-    open_direction_ballot(state)
-    steer(state, {100: Direction.VOTE, 101: Direction.ROUND})
-
-    assert settle_direction(state) is Direction.ROUND
-
-
-def test_a_timed_out_ballot_nobody_touched_keeps_the_table_talking() -> None:
-    state = make_state()
-    open_direction_ballot(state)
-
-    assert settle_direction(state) is Direction.ROUND
-
-
-def test_there_is_nothing_to_settle_without_a_ballot() -> None:
-    assert settle_direction(make_state()) is Direction.ROUND
 
 
 def test_the_elimination_stays_silent_until_everyone_has_voted() -> None:
