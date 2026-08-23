@@ -10,11 +10,10 @@ from undercover.media.layout import (
     CARD_HEIGHT,
     CARD_QUALITY,
     CARD_SIZE,
-    CARD_WIDTH,
-    CONTENT_HEIGHT,
     FONT_BOLD,
     FONT_REGULAR,
     FOOTER_GAP,
+    FOOTER_SPACE,
     GLOW_BLEED,
     GLOW_BLUR,
     GLOW_OPACITY,
@@ -32,17 +31,20 @@ from undercover.media.layout import (
     WORDMARK_INK,
     WORDMARK_SIZE,
     WORDMARK_TRACKING,
+    Ink,
 )
-from undercover.media.typography import draw_tracked, font, text_width
+from undercover.media.typography import Face, draw_text, font
 from undercover.texts import Cards
 
 
 def render(background: str, glow: RGB, blocks: Sequence[Block], promo: str | None = None) -> bytes:
     content = Image.new("RGBA", CARD_SIZE, (0, 0, 0, 0))
 
-    top = _stack_top(sum(block.space_before + block.height for block in blocks))
+    band = content_height(promo)
+    scale = squeeze(blocks, band)
+    top = _stack_top(sum(block.space_before * scale + block.height for block in blocks), band)
     for block in blocks:
-        top += block.space_before
+        top += block.space_before * scale
         block.draw(content, round(top))
         top += block.height
     _footer(content, promo)
@@ -61,17 +63,29 @@ def render(background: str, glow: RGB, blocks: Sequence[Block], promo: str | Non
     return buffer.getvalue()
 
 
+def squeeze(blocks: Sequence[Block], band: int) -> float:
+    gaps = sum(block.space_before for block in blocks)
+    solid = sum(block.height for block in blocks)
+    if not gaps or solid + gaps <= band:
+        return 1.0
+    return max((band - solid) / gaps, 0.0)
+
+
+def content_height(promo: str | None) -> int:
+    return CARD_HEIGHT - 2 * (SAFE_MARGIN + GLOW_BLEED) - _footer_height(promo) - FOOTER_SPACE
+
+
 @cache
 def _background(file_name: str) -> Image.Image:
     with Image.open(TEMPLATES_DIR / file_name) as source:
         return source.convert("RGB")
 
 
-def _stack_top(total: int) -> float:
+def _stack_top(total: float, band: int) -> float:
     limit = SAFE_MARGIN + GLOW_BLEED
-    if total >= CONTENT_HEIGHT:
+    if total > band:
         return (CARD_HEIGHT - total) / 2
-    return min(max(LAMP_CENTER - total / 2, limit), limit + CONTENT_HEIGHT - total)
+    return min(max(LAMP_CENTER - total / 2, limit), limit + band - total)
 
 
 def _bleed(alpha: Image.Image, blur: float, offset: tuple[int, int], opacity: float) -> Image.Image:
@@ -86,17 +100,26 @@ def _bleed(alpha: Image.Image, blur: float, offset: tuple[int, int], opacity: fl
     return shifted
 
 
-def _footer(layer: Image.Image, promo: str | None) -> None:
-    draw = ImageDraw.Draw(layer)
-    bottom = CARD_HEIGHT - SAFE_MARGIN - GLOW_BLEED
-    lines = (
+def _footer_lines(promo: str | None) -> tuple[tuple[str, Face, Ink, int], ...]:
+    return (
         (Cards.SPY_PLATE, font(FONT_BOLD, WORDMARK_SIZE), WORDMARK_INK, WORDMARK_TRACKING),
         *(((promo, font(FONT_REGULAR, PROMO_SIZE), PROMO_INK, PROMO_TRACKING),) if promo else ()),
     )
-    height = sum(face.size for _, face, _, _ in lines) + FOOTER_GAP * (len(lines) - 1)
 
-    top = bottom - height
-    for text, face, ink, tracking in lines:
-        width = text_width(face, text, tracking)
-        draw_tracked(draw, ((CARD_WIDTH - width) / 2, top), text, face, ink, tracking)
-        top += face.size + FOOTER_GAP
+
+def _footer_height(promo: str | None) -> int:
+    lines = _footer_lines(promo)
+    ink = sum(face.box(text, tracking).height for text, face, _, tracking in lines)
+    return round(ink) + FOOTER_GAP * (len(lines) - 1)
+
+
+def _footer(layer: Image.Image, promo: str | None) -> None:
+    draw = ImageDraw.Draw(layer)
+    lines = _footer_lines(promo)
+    boxes = tuple(face.box(text, tracking) for text, face, _, tracking in lines)
+
+    top: float = CARD_HEIGHT - SAFE_MARGIN - GLOW_BLEED - _footer_height(promo)
+    for (text, face, ink, tracking), box in zip(lines, boxes, strict=True):
+        position = (face.centered(text, tracking), top - box.top)
+        draw_text(draw, position, text, face, ink, tracking)
+        top += box.height + FOOTER_GAP

@@ -273,11 +273,13 @@ async def test_an_undelivered_role_keeps_the_finished_group_game(table: Table) -
 
 
 async def test_only_the_host_uncovers_the_spies(table: Table) -> None:
-    await talking(table, ids=(11, 22, 33, 44), mode=GameMode.GROUP)
+    state = await talking(table, ids=(11, 22, 33, 44), mode=GameMode.GROUP)
+    silent = state.players[state.discussion_order[-1]]
+    assert silent.user_id is not None
 
-    await table.tap(table.card.callback_data(Buttons.SHOW_SPIES), user_id=11)
+    await table.tap(table.card.callback_data(Buttons.SHOW_SPIES), user_id=silent.user_id)
 
-    assert Errors.NOT_HOST in table.alerts
+    assert Discussion.NOT_YOUR_TURN in table.alerts
     assert table.games.stored.status is GameStatus.DISCUSSION
 
 

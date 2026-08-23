@@ -9,15 +9,18 @@ from undercover.config import load_settings
 from undercover.db.models import Base
 from undercover.log import DEFAULT_LEVEL, configure_logging
 
-configure_logging(DEFAULT_LEVEL)
-
 config = context.config
-config.set_main_option("sqlalchemy.url", load_settings().postgres_dsn.replace("%", "%%"))
 
 target_metadata = Base.metadata
 
 
+def standalone() -> None:
+    configure_logging(DEFAULT_LEVEL)
+    config.set_main_option("sqlalchemy.url", load_settings().postgres_dsn.replace("%", "%%"))
+
+
 def run_migrations_offline() -> None:
+    standalone()
     context.configure(
         url=config.get_main_option("sqlalchemy.url"),
         target_metadata=target_metadata,
@@ -37,6 +40,7 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
+    standalone()
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
@@ -50,7 +54,11 @@ async def run_async_migrations() -> None:
 
 
 def run_migrations_online() -> None:
-    asyncio.run(run_async_migrations())
+    borrowed: Connection | None = config.attributes.get("connection")
+    if borrowed is None:
+        asyncio.run(run_async_migrations())
+    else:
+        do_run_migrations(borrowed)
 
 
 if context.is_offline_mode():

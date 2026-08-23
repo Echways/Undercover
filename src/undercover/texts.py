@@ -10,6 +10,7 @@ BRAND: Final = "Undercover"
 
 GAME_COMMAND: Final = "undercover"
 STATS_COMMAND: Final = "undercover_stats"
+RESET_COMMAND: Final = "undercover_reset"
 
 
 class Start:
@@ -27,6 +28,7 @@ class Start:
     COMMAND_DESCRIPTION: Final = "Новая партия"
     GAME_COMMAND_DESCRIPTION: Final = "Партия в группе"
     STATS_COMMAND_DESCRIPTION: Final = "Зал славы чата"
+    RESET_COMMAND_DESCRIPTION: Final = "Сбросить зависшую партию"
 
 
 class Setup:
@@ -173,6 +175,7 @@ class Discussion:
     SPY_TITLE_MANY: Final = "Шпионы"
     FINAL_CAPTION: Final = "{title}: {spies}\nЗагаданное слово: {word}"
 
+    NOT_YOUR_TURN: Final = "Ход передаёт тот, кто сейчас говорит, или ведущий."
     WRONG_PHASE: Final = "Обсуждение уже закончено."
     GAME_IS_ON: Final = "Партия ещё идёт — сначала доиграйте её."
     ALL_SPOKE: Final = "Высказались все — время искать шпиона."
@@ -180,6 +183,8 @@ class Discussion:
 
 class Vote:
     DIRECTION_TALLY: Final = "Ещё круг — {round}, голосуем — {vote}"
+    DIRECTION_PROMPT: Final = "Решает большинство. Не решите — рассудит таймер."
+    COUNTED: Final = "Голос учтён."
     HOT_SEAT_PROMPT: Final = "Стол решил — отметьте, кто выбывает."
     PROGRESS: Final = "Проголосовали {given} из {total}"
 
@@ -233,6 +238,12 @@ class Stats:
     PROFILE_STREAK: Final = "Серия побед: {value}"
     PROFILE_FIRST_OUTS: Final = "Вылетали первым: {value} {times}"
     NO_PROFILE: Final = "Вы ещё не играли в этом чате."
+
+
+class Reset:
+    NOTHING: Final = "Здесь нечего сбрасывать — партия не идёт."
+    DENIED: Final = "Сбросить партию может ведущий или администратор чата."
+    DONE: Final = f"Партия сброшена. Отправьте /{GAME_COMMAND}, чтобы собрать новую."
 
 
 class Errors:

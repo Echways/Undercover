@@ -59,7 +59,7 @@ def render_civilian_card(name: str, word: str) -> bytes:
 def render_spy_card(name: str, hint: str) -> bytes:
     player = plain(name, "имя игрока")
     clue = plain(hint, "подсказка")
-    hint_font, hint_lines = fit(
+    hint_face, hint_lines = fit(
         clue,
         FONT_REGULAR,
         max_size=HINT_MAX_SIZE,
@@ -75,7 +75,7 @@ def render_spy_card(name: str, hint: str) -> bytes:
             caption(Cards.SPY_CAPTION, INK_MUTED_WARM, space_before=56),
             TextBlock(
                 lines=hint_lines,
-                font=hint_font,
+                face=hint_face,
                 color=INK,
                 space_before=28,
                 line_spacing=1.35,

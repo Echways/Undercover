@@ -19,6 +19,7 @@ async def load_game_in_phase(
     games: GameStateRepository,
     expected: GameStatus,
     wrong_phase: str,
+    denied: str = Errors.NOT_HOST,
 ) -> GameSessionState | None:
     state = await games.load(session_id)
     if state is None:
@@ -28,7 +29,7 @@ async def load_game_in_phase(
         await callback.answer(wrong_phase, show_alert=True)
         return None
     if not may_act(state, callback.from_user.id):
-        await callback.answer(Errors.NOT_HOST, show_alert=True)
+        await callback.answer(denied, show_alert=True)
         return None
     return state
 
@@ -37,7 +38,12 @@ async def load_discussion(
     callback: CallbackQuery, session_id: str, games: GameStateRepository
 ) -> GameSessionState | None:
     return await load_game_in_phase(
-        callback, session_id, games, GameStatus.DISCUSSION, Discussion.WRONG_PHASE
+        callback,
+        session_id,
+        games,
+        GameStatus.DISCUSSION,
+        Discussion.WRONG_PHASE,
+        Discussion.NOT_YOUR_TURN,
     )
 
 

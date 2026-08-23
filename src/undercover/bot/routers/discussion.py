@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from functools import partial
@@ -24,6 +25,7 @@ from undercover.game.voting import (
     close_ballot,
     direction_result,
     open_direction_ballot,
+    settle_direction,
     tally,
 )
 from undercover.media.card_renderer import CARD_SUFFIX, render_speaker_card
@@ -54,7 +56,13 @@ DIRECTIONS: Final[Mapping[TalkAction, Direction]] = {
 }
 
 
-def create_discussion_router(keeper: TurnKeeper, start_voting: PhaseStarter) -> Router:
+@dataclass(frozen=True, slots=True)
+class TurnFlow:
+    keeper: TurnKeeper
+    start_voting: PhaseStarter
+
+
+def create_discussion_router(flow: TurnFlow) -> Router:
     router = Router(name="discussion")
 
     @router.callback_query(TalkCB.filter(F.action == TalkAction.NEXT))
@@ -64,7 +72,7 @@ def create_discussion_router(keeper: TurnKeeper, start_voting: PhaseStarter) -> 
         games: GameStateRepository,
         bot: Bot,
     ) -> None:
-        async with keeper.locks.held(callback_data.session_id):
+        async with flow.keeper.locks.held(callback_data.session_id):
             state = await load_discussion(callback, callback_data.session_id, games)
             if state is None:
                 return
@@ -81,17 +89,17 @@ def create_discussion_router(keeper: TurnKeeper, start_voting: PhaseStarter) -> 
                 return
 
             await close_turn(bot, state, _spent(state))
-            await open_turn(bot, games, state, next_cursor, keeper)
+            await open_turn(bot, games, state, next_cursor, flow)
             await callback.answer()
 
-    @router.callback_query(TalkCB.filter(F.action.in_({TalkAction.ROUND, TalkAction.VOTE})))
+    @router.callback_query(TalkCB.filter(F.action.in_(set(DIRECTIONS))))
     async def cb_direction(
         callback: CallbackQuery,
         callback_data: TalkCB,
         games: GameStateRepository,
         bot: Bot,
     ) -> None:
-        async with keeper.locks.held(callback_data.session_id):
+        async with flow.keeper.locks.held(callback_data.session_id):
             state = await load_discussion(callback, callback_data.session_id, games)
             if state is None:
                 return
@@ -104,43 +112,28 @@ def create_discussion_router(keeper: TurnKeeper, start_voting: PhaseStarter) -> 
                 await callback.answer(VOTE_REFUSALS[refusal], show_alert=True)
                 return
 
-            keeper.clock.stop(state.session_id)
             chosen = direction_result(state)
             if chosen is None:
                 await games.save(state)
-                await close_turn(
-                    bot,
-                    state,
-                    "",
-                    _speaker_keyboard(state, state.discussion_cursor, is_last=True),
-                )
-                await callback.answer()
+                await _recount(bot, games, state, flow)
+                await callback.answer(Vote.COUNTED)
                 return
-
-            if chosen is Direction.VOTE:
-                await close_turn(bot, state, _spent(state))
-                await start_voting(bot, games, state)
-                await callback.answer()
-                return
-
-            if _speaker_name(state, 0) is None:
+            if _leads_nowhere(state, chosen):
                 await report_broken(callback, state)
                 return
 
-            await close_turn(bot, state, _spent(state))
-            state.discussion_round += 1
-            await open_turn(bot, games, state, 0, keeper)
+            await follow_direction(bot, games, state, chosen, flow, _spent(state))
             await callback.answer()
 
     return router
 
 
 async def start_discussion(
-    bot: Bot, games: GameStateRepository, state: GameSessionState, keeper: TurnKeeper
+    bot: Bot, games: GameStateRepository, state: GameSessionState, flow: TurnFlow
 ) -> None:
     state.status = GameStatus.DISCUSSION
     state.discussion_order = build_discussion_order(alive(state), secure_rng())
-    await open_turn(bot, games, state, 0, keeper)
+    await open_turn(bot, games, state, 0, flow)
 
 
 async def open_turn(
@@ -148,7 +141,7 @@ async def open_turn(
     games: GameStateRepository,
     state: GameSessionState,
     cursor: int,
-    keeper: TurnKeeper,
+    flow: TurnFlow,
 ) -> None:
     name = state.players[state.discussion_order[cursor]].name
     is_last = cursor == len(state.discussion_order) - 1
@@ -175,12 +168,7 @@ async def open_turn(
     state.current_message_id = message_id
     await games.save(state)
 
-    keeper.clock.start(
-        bot,
-        state,
-        TurnView(caption=caption, keyboard=keyboard),
-        expiry_handler(games, keeper),
-    )
+    _watch_turn(bot, games, state, caption, keyboard, flow)
 
 
 async def close_turn(
@@ -195,8 +183,25 @@ async def close_turn(
     )
 
 
-def expiry_handler(games: GameStateRepository, keeper: TurnKeeper) -> OnExpire:
-    return partial(_expire_turn, games, keeper)
+async def follow_direction(
+    bot: Bot,
+    games: GameStateRepository,
+    state: GameSessionState,
+    chosen: Direction,
+    flow: TurnFlow,
+    marker: str,
+) -> None:
+    await close_turn(bot, state, marker)
+    if chosen is Direction.VOTE:
+        await flow.start_voting(bot, games, state)
+        return
+
+    state.discussion_round += 1
+    await open_turn(bot, games, state, 0, flow)
+
+
+def expiry_handler(games: GameStateRepository, flow: TurnFlow) -> OnExpire:
+    return partial(_expire_turn, games, flow)
 
 
 async def report_broken(
@@ -209,20 +214,18 @@ async def report_broken(
 def speaker_caption(state: GameSessionState, cursor: int) -> str:
     name = state.players[state.discussion_order[cursor]].name
     is_last = cursor == len(state.discussion_order) - 1
-    body = (
-        Discussion.LAST_TALK_CAPTION.format(name=name)
-        if is_last
-        else Discussion.TALK_CAPTION.format(
+    if not is_last:
+        body = Discussion.TALK_CAPTION.format(
             position=cursor + 1, total=len(state.discussion_order), name=name
         )
-    )
-    return _round_prefix(state) + body + _direction_tally(state)
+        return _round_prefix(state) + body
+
+    body = Discussion.LAST_TALK_CAPTION.format(name=name)
+    return _round_prefix(state) + body + f"\n{Vote.DIRECTION_PROMPT}" + _direction_tally(state)
 
 
-async def _expire_turn(
-    games: GameStateRepository, keeper: TurnKeeper, bot: Bot, turn: Turn
-) -> None:
-    async with keeper.locks.held(turn.session_id):
+async def _expire_turn(games: GameStateRepository, flow: TurnFlow, bot: Bot, turn: Turn) -> None:
+    async with flow.keeper.locks.held(turn.session_id):
         state = await games.load(turn.session_id)
         if state is None or state.status is not GameStatus.DISCUSSION:
             return
@@ -231,21 +234,49 @@ async def _expire_turn(
 
         next_cursor = state.discussion_cursor + 1
         if next_cursor >= len(state.discussion_order):
-            await close_turn(
-                bot,
-                state,
-                Timer.EXPIRED,
-                _speaker_keyboard(state, state.discussion_cursor, is_last=True),
-            )
+            chosen = settle_direction(state)
+            if _leads_nowhere(state, chosen):
+                _report_broken_order(state)
+                return
+            await follow_direction(bot, games, state, chosen, flow, Timer.EXPIRED)
             return
         if _speaker_name(state, next_cursor) is None:
-            logger.error(
-                "партия %s: %s (%r)", state.session_id, BROKEN_ORDER, state.discussion_order
-            )
+            _report_broken_order(state)
             return
 
         await close_turn(bot, state, Timer.EXPIRED)
-        await open_turn(bot, games, state, next_cursor, keeper)
+        await open_turn(bot, games, state, next_cursor, flow)
+
+
+async def _recount(
+    bot: Bot, games: GameStateRepository, state: GameSessionState, flow: TurnFlow
+) -> None:
+    caption = speaker_caption(state, state.discussion_cursor)
+    keyboard = _speaker_keyboard(state, state.discussion_cursor, is_last=True)
+    await board_for(state).revise(
+        bot, state, timed_caption(caption, _left(state), state.turn_seconds), keyboard
+    )
+    _watch_turn(bot, games, state, caption, keyboard, flow)
+
+
+def _watch_turn(
+    bot: Bot,
+    games: GameStateRepository,
+    state: GameSessionState,
+    caption: str,
+    keyboard: InlineKeyboardMarkup,
+    flow: TurnFlow,
+) -> None:
+    flow.keeper.clock.start(
+        bot,
+        state,
+        TurnView(caption=caption, keyboard=keyboard),
+        expiry_handler(games, flow),
+    )
+
+
+def _report_broken_order(state: GameSessionState) -> None:
+    logger.error("партия %s: %s (%r)", state.session_id, BROKEN_ORDER, state.discussion_order)
 
 
 def _direction_tally(state: GameSessionState) -> str:
@@ -264,12 +295,17 @@ def _deadline(state: GameSessionState) -> datetime | None:
     return datetime.now(UTC) + timedelta(seconds=state.turn_seconds)
 
 
+def _left(state: GameSessionState) -> int:
+    if state.turn_seconds <= 0 or state.turn_deadline is None:
+        return 0
+    countdown = round((state.turn_deadline - datetime.now(UTC)).total_seconds())
+    return min(state.turn_seconds, max(0, countdown))
+
+
 def _spent(state: GameSessionState) -> str:
     if state.turn_seconds <= 0 or state.turn_deadline is None:
         return ""
-    countdown = round((state.turn_deadline - datetime.now(UTC)).total_seconds())
-    left = min(state.turn_seconds, max(0, countdown))
-    return Timer.SPENT.format(seconds=state.turn_seconds - left)
+    return Timer.SPENT.format(seconds=state.turn_seconds - _left(state))
 
 
 def _speaker_name(state: GameSessionState, cursor: int) -> str | None:
@@ -279,6 +315,10 @@ def _speaker_name(state: GameSessionState, cursor: int) -> str | None:
     if not 0 <= order_index < len(state.players):
         return None
     return state.players[order_index].name
+
+
+def _leads_nowhere(state: GameSessionState, chosen: Direction) -> bool:
+    return chosen is Direction.ROUND and _speaker_name(state, 0) is None
 
 
 def _round_is_over(state: GameSessionState, cursor: int) -> bool:

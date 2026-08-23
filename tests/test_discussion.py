@@ -9,9 +9,11 @@ from discussion_harness import (
     Table,
     all_spoken,
     finished,
+    last_caption,
     log,
     make_state,
     repainted,
+    repainted_texts,
     spoken_names,
     table,
     talking,
@@ -98,7 +100,7 @@ async def test_every_player_speaks_once_and_then_the_hunt_begins(table: Table) -
         await table.press(Buttons.NEXT_SPEAKER)
 
     last = NAMES[state.discussion_order[-1]]
-    assert table.card.caption == Discussion.LAST_TALK_CAPTION.format(name=last)
+    assert table.card.caption == last_caption(last)
     assert table.card.texts == (Buttons.ANOTHER_ROUND, Buttons.GO_TO_VOTE, Buttons.SHOW_SPIES)
     assert sorted(spoken_names(table)) == sorted(NAMES)
 
@@ -121,7 +123,7 @@ async def test_an_outsider_does_not_move_the_discussion(table: Table) -> None:
 
     await table.press(Buttons.NEXT_SPEAKER, user_id=OUTSIDER_ID)
 
-    assert table.alerts[-1] == Errors.NOT_HOST
+    assert table.alerts[-1] == Discussion.NOT_YOUR_TURN
     assert table.games.stored.discussion_cursor == 0
 
 
@@ -200,9 +202,7 @@ async def test_a_later_round_numbers_its_last_speaker_too(table: Table) -> None:
     for _ in range(len(NAMES) - 1):
         await table.press(Buttons.NEXT_SPEAKER)
 
-    assert table.card.caption == Discussion.ROUND_PREFIX.format(
-        round=2
-    ) + Discussion.LAST_TALK_CAPTION.format(name=NAMES[state.discussion_order[-1]])
+    assert table.card.caption == last_caption(NAMES[state.discussion_order[-1]], circle=2)
 
 
 async def test_another_round_does_not_cut_the_current_one_short(table: Table) -> None:
@@ -250,7 +250,7 @@ async def test_an_outsider_does_not_start_another_round(table: Table) -> None:
 
     await table.press(Buttons.ANOTHER_ROUND, user_id=OUTSIDER_ID)
 
-    assert table.alerts[-1] == Errors.NOT_HOST
+    assert table.alerts[-1] == Discussion.NOT_YOUR_TURN
     assert table.games.stored.discussion_round == 1
 
 
@@ -302,7 +302,7 @@ async def test_a_bystander_still_cannot_move_the_turn(table: Table) -> None:
     await table.press(Buttons.NEXT_SPEAKER, user_id=waiting.user_id)
 
     assert table.games.stored.discussion_cursor == 0
-    assert table.alerts[-1] == Errors.NOT_HOST
+    assert table.alerts[-1] == Discussion.NOT_YOUR_TURN
 
 
 async def test_a_new_round_freezes_the_last_turn_before_the_counter_moves(table: Table) -> None:
@@ -344,7 +344,7 @@ async def test_pressing_next_reports_the_time_the_speaker_took(table: Table) -> 
 
 async def test_an_expired_turn_moves_on_by_itself(table: Table) -> None:
     state = await talking(table, mode=GameMode.GROUP, turn_seconds=60)
-    on_expire = expiry_handler(table.games, table.keeper)
+    on_expire = expiry_handler(table.games, table.flow)
 
     await on_expire(table.bot, Turn(SESSION_ID, state.discussion_round, state.discussion_cursor))
 
@@ -354,27 +354,49 @@ async def test_an_expired_turn_moves_on_by_itself(table: Table) -> None:
     assert frozen.reply_markup is None
 
 
-async def test_an_expired_last_turn_keeps_the_round_buttons(table: Table) -> None:
+async def test_an_expired_last_turn_starts_another_round(table: Table) -> None:
     state = await all_spoken(table, mode=GameMode.GROUP, turn_seconds=60)
-    last = state.discussion_cursor
     frozen_before = len(table.session.calls(EditMessageCaption))
-    on_expire = expiry_handler(table.games, table.keeper)
+    on_expire = expiry_handler(table.games, table.flow)
 
-    await on_expire(table.bot, Turn(SESSION_ID, state.discussion_round, last))
+    await on_expire(table.bot, Turn(SESSION_ID, state.discussion_round, state.discussion_cursor))
 
     frozen = table.session.calls(EditMessageCaption)[frozen_before]
     assert Timer.EXPIRED in (frozen.caption or "")
-    assert frozen.reply_markup is not None
-    assert Buttons.ANOTHER_ROUND in [
-        item.text for row in frozen.reply_markup.inline_keyboard for item in row
-    ]
-    assert table.games.stored.discussion_cursor == last
+    stored = table.games.stored
+    assert stored.discussion_round == 2
+    assert stored.discussion_cursor == 0
+
+
+async def test_an_expired_last_turn_obeys_the_votes_already_cast(table: Table) -> None:
+    ids = (HOST_ID, 22, 33, 44)
+    state = await all_spoken(table, ids=ids, mode=GameMode.GROUP, turn_seconds=60)
+    await table.tap(table.card.callback_data(Buttons.GO_TO_VOTE), user_id=22)
+    on_expire = expiry_handler(table.games, table.flow)
+
+    await on_expire(table.bot, Turn(SESSION_ID, state.discussion_round, state.discussion_cursor))
+
+    assert table.games.stored.status is GameStatus.VOTING
+
+
+async def test_an_expired_split_vote_falls_back_to_another_round(table: Table) -> None:
+    ids = (HOST_ID, 22, 33, 44)
+    state = await all_spoken(table, ids=ids, mode=GameMode.GROUP, turn_seconds=60)
+    await table.tap(table.card.callback_data(Buttons.GO_TO_VOTE), user_id=22)
+    await table.tap(table.card.callback_data(Buttons.ANOTHER_ROUND), user_id=33)
+    on_expire = expiry_handler(table.games, table.flow)
+
+    await on_expire(table.bot, Turn(SESSION_ID, state.discussion_round, state.discussion_cursor))
+
+    stored = table.games.stored
+    assert stored.status is GameStatus.DISCUSSION
+    assert stored.discussion_round == 2
 
 
 async def test_a_stale_tick_is_ignored(table: Table) -> None:
     await talking(table, mode=GameMode.GROUP, turn_seconds=60)
     await table.press(Buttons.NEXT_SPEAKER)
-    on_expire = expiry_handler(table.games, table.keeper)
+    on_expire = expiry_handler(table.games, table.flow)
 
     await on_expire(table.bot, Turn(SESSION_ID, round=1, cursor=0))
 
@@ -383,7 +405,7 @@ async def test_a_stale_tick_is_ignored(table: Table) -> None:
 
 async def test_a_tick_of_a_game_that_is_over_changes_nothing(table: Table) -> None:
     state = await finished(table, mode=GameMode.GROUP, turn_seconds=60)
-    on_expire = expiry_handler(table.games, table.keeper)
+    on_expire = expiry_handler(table.games, table.flow)
 
     await on_expire(table.bot, Turn(SESSION_ID, state.discussion_round, state.discussion_cursor))
 
@@ -391,7 +413,7 @@ async def test_a_tick_of_a_game_that_is_over_changes_nothing(table: Table) -> No
 
 
 async def test_a_tick_of_a_forgotten_game_changes_nothing(table: Table) -> None:
-    on_expire = expiry_handler(table.games, table.keeper)
+    on_expire = expiry_handler(table.games, table.flow)
 
     await on_expire(table.bot, Turn("нет-такой", round=1, cursor=0))
 
@@ -400,7 +422,7 @@ async def test_a_tick_of_a_forgotten_game_changes_nothing(table: Table) -> None:
 
 async def test_a_button_and_an_expiry_racing_move_the_turn_exactly_once(table: Table) -> None:
     state = await talking(table, mode=GameMode.GROUP, turn_seconds=60)
-    on_expire = expiry_handler(table.games, table.keeper)
+    on_expire = expiry_handler(table.games, table.flow)
     opened = len(table.session.calls(SendPhoto))
 
     await asyncio.gather(
@@ -418,7 +440,7 @@ async def test_a_tick_on_a_broken_order_opens_no_turn(table: Table) -> None:
             mode=GameMode.GROUP, turn_seconds=60, discussion_order=[0, 99], discussion_cursor=0
         )
     )
-    on_expire = expiry_handler(table.games, table.keeper)
+    on_expire = expiry_handler(table.games, table.flow)
 
     await on_expire(table.bot, Turn(SESSION_ID, round=1, cursor=0))
 
@@ -532,12 +554,36 @@ async def test_another_round_keeps_the_order_the_table_already_knows(table: Tabl
     assert table.games.stored.discussion_order == state.discussion_order
 
 
-async def test_the_direction_vote_silences_the_clock(table: Table) -> None:
+async def test_a_lone_direction_vote_leaves_the_clock_ticking(table: Table) -> None:
     ids = (HOST_ID, 22, 33, 44)
     await all_spoken(table, ids=ids, mode=GameMode.GROUP, turn_seconds=60)
 
     await table.tap(table.card.callback_data(Buttons.GO_TO_VOTE), user_id=22)
 
+    assert table.games.stored.status is GameStatus.DISCUSSION
+    assert table.keeper.clock.running == frozenset({SESSION_ID})
+
+
+async def test_a_lone_direction_vote_shows_the_tally_without_losing_the_buttons(
+    table: Table,
+) -> None:
+    ids = (HOST_ID, 22, 33, 44)
+    await all_spoken(table, ids=ids, mode=GameMode.GROUP, turn_seconds=60)
+
+    await table.tap(table.card.callback_data(Buttons.GO_TO_VOTE), user_id=22)
+
+    assert Vote.DIRECTION_TALLY.format(round=0, vote=1) in (repainted(table).caption or "")
+    assert Buttons.GO_TO_VOTE in repainted_texts(table)
+
+
+async def test_the_settled_direction_silences_the_clock(table: Table) -> None:
+    ids = (HOST_ID, 22, 33, 44)
+    await all_spoken(table, ids=ids, mode=GameMode.GROUP, turn_seconds=60)
+
+    for voter in (22, 33, 44):
+        await table.tap(table.card.callback_data(Buttons.GO_TO_VOTE), user_id=voter)
+
+    assert table.games.stored.status is GameStatus.VOTING
     assert table.keeper.clock.running == frozenset()
 
 

@@ -22,7 +22,11 @@ from aiogram_dialog.test_tools.memory_storage import JsonMemoryStorage
 from fake_bot import CHAT_ID, HOST_ID, FakeSession, callback_update, make_bot
 from fake_games import FakeGameStateRepository
 from fake_words import WORD, FakeWords, pizza
-from undercover.bot.routers.discussion import create_discussion_router, start_discussion
+from undercover.bot.routers.discussion import (
+    TurnFlow,
+    create_discussion_router,
+    start_discussion,
+)
 from undercover.bot.routers.finale import create_finale_router
 from undercover.bot.routers.reveal import create_reveal_router, start_reveal
 from undercover.bot.routers.setup_dialog import create_setup_dialog
@@ -30,7 +34,7 @@ from undercover.bot.routers.setup_draft import Setup
 from undercover.bot.routers.voting import create_voting_router, start_voting
 from undercover.bot.turn_clock import KeyedLocks, TurnClock, TurnKeeper
 from undercover.game.models import GameMode, GameSessionState, GameStatus, PlayerState
-from undercover.texts import Buttons
+from undercover.texts import Buttons, Discussion, Vote
 
 SESSION_ID: Final = "11111111-1111-1111-1111-111111111111"
 IDLE_TICK: Final = timedelta(minutes=1)
@@ -137,6 +141,7 @@ class Table:
     session: FakeSession
     messages: MockMessageManager
     games: FakeGameStateRepository
+    flow: TurnFlow
     words: FakeWords
     log: RecordingLog
     keeper: TurnKeeper
@@ -196,13 +201,14 @@ async def table(words: FakeWords, log: RecordingLog) -> AsyncIterator[Table]:
     bot = make_bot(session)
     games = FakeGameStateRepository()
     keeper = TurnKeeper(clock=TurnClock(tick=IDLE_TICK), locks=KeyedLocks())
-    begin_discussion = partial(start_discussion, keeper=keeper)
     begin_voting = partial(start_voting, keeper=keeper)
+    flow = TurnFlow(keeper=keeper, start_voting=begin_voting)
+    begin_discussion = partial(start_discussion, flow=flow)
     dispatcher = Dispatcher(storage=JsonMemoryStorage(), games=games)
     dispatcher.include_router(start_router())
     dispatcher.include_router(create_setup_dialog(words.cached(), start_reveal))
     dispatcher.include_router(create_reveal_router(begin_discussion))
-    dispatcher.include_router(create_discussion_router(keeper, begin_voting))
+    dispatcher.include_router(create_discussion_router(flow))
     dispatcher.include_router(create_voting_router(keeper, begin_discussion, log))
     dispatcher.include_router(create_finale_router(words.open, log, keeper, begin_discussion))
     messages = MockMessageManager()
@@ -215,6 +221,7 @@ async def table(words: FakeWords, log: RecordingLog) -> AsyncIterator[Table]:
         session=session,
         messages=messages,
         games=games,
+        flow=flow,
         words=words,
         log=log,
         keeper=keeper,
@@ -226,7 +233,7 @@ async def table(words: FakeWords, log: RecordingLog) -> AsyncIterator[Table]:
 async def talking(table: Table, **overrides: Any) -> GameSessionState:
     state = make_state(**overrides)
     await table.games.save(state)
-    await start_discussion(table.bot, table.games, state, table.keeper)
+    await start_discussion(table.bot, table.games, state, table.flow)
     return table.games.stored
 
 
@@ -241,6 +248,12 @@ async def all_spoken(table: Table, **overrides: Any) -> GameSessionState:
     for _ in range(len(state.discussion_order) - 1):
         await table.press(Buttons.NEXT_SPEAKER)
     return table.games.stored
+
+
+def last_caption(name: str, circle: int = 1) -> str:
+    prefix = "" if circle == 1 else Discussion.ROUND_PREFIX.format(round=circle)
+    body = Discussion.LAST_TALK_CAPTION.format(name=name)
+    return f"{prefix}{body}\n{Vote.DIRECTION_PROMPT}"
 
 
 def spoken_names(table: Table) -> list[str]:

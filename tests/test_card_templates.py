@@ -14,7 +14,12 @@ from undercover.media.layout import (
 
 
 def test_assets_are_bundled_inside_the_package() -> None:
-    for asset in (BACKGROUND_NEUTRAL, BACKGROUND_UNDERCOVER, FONT_REGULAR, FONT_BOLD):
+    for asset in (
+        BACKGROUND_NEUTRAL,
+        BACKGROUND_UNDERCOVER,
+        FONT_REGULAR.file,
+        FONT_BOLD.file,
+    ):
         assert (TEMPLATES_DIR / asset).is_file(), asset
 
 

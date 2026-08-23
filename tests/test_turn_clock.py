@@ -183,3 +183,37 @@ def test_a_timed_caption_carries_the_countdown_on_its_own_line() -> None:
 
     assert result.startswith("Говорит: Аня\n")
     assert countdown_line(30, 60) in result
+
+
+class SelfStopping:
+    def __init__(self, clock: TurnClock) -> None:
+        self._clock = clock
+        self.finished = asyncio.Event()
+
+    async def __call__(self, bot: Bot, turn: Turn) -> None:
+        self._clock.stop(turn.session_id)
+        await asyncio.sleep(0)
+        self.finished.set()
+
+
+async def test_an_expiring_turn_that_stops_the_clock_still_finishes_its_work() -> None:
+    clock = TurnClock(tick=TICK)
+    handler = SelfStopping(clock)
+
+    clock.start(make_bot(FakeSession()), make_state(), VIEW, handler)
+    await asyncio.wait_for(handler.finished.wait(), timeout=2)
+
+    assert handler.finished.is_set()
+    assert clock.running == frozenset()
+
+
+async def test_stopping_a_clock_from_the_outside_still_cancels_it() -> None:
+    clock = TurnClock(tick=TICK)
+    expiries = Expiries()
+
+    clock.start(make_bot(FakeSession()), make_state(seconds=5), VIEW, expiries)
+    clock.stop(SESSION_ID)
+    await asyncio.sleep(0.1)
+
+    assert clock.running == frozenset()
+    assert expiries.turns == []

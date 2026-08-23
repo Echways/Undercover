@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -17,8 +18,15 @@ TEMPLATES_DIR: Final[Path] = Path(__file__).parent / "templates"
 BACKGROUND_NEUTRAL: Final = "bg_neutral.jpg"
 BACKGROUND_UNDERCOVER: Final = "bg_undercover.jpg"
 
-FONT_REGULAR: Final = "regular.ttf"
-FONT_BOLD: Final = "bold.otf"
+
+@dataclass(frozen=True, slots=True)
+class Typeface:
+    file: str
+    cap_ratio: float
+
+
+FONT_REGULAR: Final = Typeface(file="regular.ttf", cap_ratio=0.885)
+FONT_BOLD: Final = Typeface(file="bold.otf", cap_ratio=0.625)
 
 SAFE_MARGIN: Final = 96
 GLOW_BLEED: Final = 32
@@ -54,7 +62,7 @@ FOOTNOTE_SIZE: Final = 32
 STAMP_TEXT_SIZE: Final = 60
 STAMP_TRACKING: Final = 10
 STAMP_PADDING_X: Final = 46
-STAMP_PADDING_Y: Final = 24
+STAMP_PADDING_Y: Final = 37
 STAMP_ANGLE: Final = 3.0
 STAMP_BORDER: Final = 5
 STAMP_INSET: Final = 10
@@ -71,9 +79,7 @@ PROMO_SIZE: Final = 24
 PROMO_TRACKING: Final = 6
 PROMO_INK: Final[RGBA] = (226, 230, 242, 150)
 FOOTER_GAP: Final = 16
-
-FOOTER_BAND: Final = WORDMARK_SIZE + FOOTER_GAP + PROMO_SIZE
-CONTENT_HEIGHT: Final = CARD_HEIGHT - 2 * (SAFE_MARGIN + GLOW_BLEED) - FOOTER_BAND
+FOOTER_SPACE: Final = 40
 
 HEADLINE_MAX_SIZE: Final = 120
 HEADLINE_MIN_SIZE: Final = 52

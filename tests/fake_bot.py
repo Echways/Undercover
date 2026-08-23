@@ -11,13 +11,23 @@ from aiogram.methods import (
     EditMessageCaption,
     EditMessageMedia,
     EditMessageText,
+    GetChatMember,
     GetMe,
     SendMessage,
     SendPhoto,
     SetMyCommands,
     TelegramMethod,
 )
-from aiogram.types import CallbackQuery, Chat, Message, PhotoSize, Update, User
+from aiogram.types import (
+    CallbackQuery,
+    Chat,
+    ChatMemberAdministrator,
+    ChatMemberMember,
+    Message,
+    PhotoSize,
+    Update,
+    User,
+)
 
 TOKEN: Final = "424242:AA-fake-bot-token"
 
@@ -78,6 +88,8 @@ class FakeSession(BaseSession):
         if isinstance(method, EditMessageText):
             assert method.message_id is not None
             return text_message(method.message_id, method.text or "")
+        if isinstance(method, GetChatMember):
+            return chat_member(method.user_id)
         if isinstance(method, GetMe):
             return User(id=1, is_bot=True, first_name="Undercover", username="undercover_bot")
         if isinstance(method, SendMessage):
@@ -85,6 +97,28 @@ class FakeSession(BaseSession):
         if isinstance(method, (DeleteMessage, AnswerCallbackQuery, SetMyCommands)):
             return True
         raise AssertionError(f"тест не ждал вызова {type(method).__name__}")
+
+
+def chat_member(user_id: int) -> ChatMemberMember:
+    return ChatMemberMember(user=User(id=user_id, is_bot=False, first_name="Игрок"))
+
+
+def chat_admin(user_id: int) -> ChatMemberAdministrator:
+    return ChatMemberAdministrator(
+        user=User(id=user_id, is_bot=False, first_name="Админ"),
+        can_be_edited=False,
+        is_anonymous=False,
+        can_manage_chat=True,
+        can_delete_messages=True,
+        can_manage_video_chats=True,
+        can_restrict_members=True,
+        can_promote_members=False,
+        can_change_info=True,
+        can_invite_users=True,
+        can_post_stories=False,
+        can_edit_stories=False,
+        can_delete_stories=False,
+    )
 
 
 def photo_message(message_id: int, chat_id: int = CHAT_ID) -> Message:
