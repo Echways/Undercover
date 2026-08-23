@@ -1,11 +1,13 @@
 import inspect
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 
 import pytest
 from PIL import Image, ImageChops
 
-from undercover.game.models import Winner
+from undercover.game.models import Ruleset, Winner
+from undercover.game.summary import GameSummary, Suspect
 from undercover.media.blocks import Block, headline
 from undercover.media.canvas import render
 from undercover.media.card_renderer import (
@@ -32,6 +34,7 @@ from undercover.media.layout import (
     SAFE_MARGIN,
     TEMPLATES_DIR,
 )
+from undercover.media.summary_card import render_summary_card
 from undercover.media.typography import font, plain, shorten, text_width, wrap
 
 RENDERERS: tuple[Callable[..., bytes], ...] = (
@@ -382,3 +385,132 @@ def test_the_result_card_says_who_won_when_there_is_a_winner() -> None:
     assert quiet != civilians
     assert civilians != spies
     assert quiet != spies
+
+
+SUMMARY_STARTED_AT = datetime(2026, 8, 23, 20, 0, tzinfo=UTC)
+
+TABLE: tuple[Suspect, ...] = (
+    Suspect(name="Аня", is_spy=False, out_order=None),
+    Suspect(name="Борис", is_spy=True, out_order=2),
+    Suspect(name="Вера", is_spy=False, out_order=1),
+)
+
+
+def summary(
+    *,
+    case_number: int | None = 17,
+    winner: Winner | None = Winner.CIVILIANS,
+    ruleset: Ruleset = Ruleset.CLASSIC,
+    suspects: tuple[Suspect, ...] = TABLE,
+    word: str = "пицца",
+    hints: tuple[str, ...] = ("её режут на куски",),
+    rounds: int = 3,
+    duration: timedelta = timedelta(minutes=6),
+) -> GameSummary:
+    return GameSummary(
+        case_number=case_number,
+        opened_at=SUMMARY_STARTED_AT,
+        winner=winner,
+        ruleset=ruleset,
+        suspects=suspects,
+        word=word,
+        hints=hints,
+        rounds=rounds,
+        duration=duration,
+    )
+
+
+def test_the_summary_card_is_a_photo_of_card_size() -> None:
+    with open_card(render_summary_card(summary())) as card:
+        assert card.format == CARD_FORMAT
+        assert card.size == CARD_SIZE
+
+
+def test_the_civilians_take_the_cold_card() -> None:
+    assert_same_corner(render_summary_card(summary()), BACKGROUND_NEUTRAL)
+
+
+def test_the_spies_take_the_warm_card() -> None:
+    assert_same_corner(render_summary_card(summary(winner=Winner.SPIES)), BACKGROUND_UNDERCOVER)
+
+
+def test_an_early_reveal_stays_warm() -> None:
+    assert_same_corner(render_summary_card(summary(winner=None)), BACKGROUND_UNDERCOVER)
+
+
+def test_the_summary_card_names_every_player() -> None:
+    shorter = summary(suspects=TABLE[:2])
+
+    assert render_summary_card(summary()) != render_summary_card(shorter)
+
+
+def test_the_summary_card_shows_the_word_that_was_played() -> None:
+    assert render_summary_card(summary()) != render_summary_card(summary(word="пельмени"))
+
+
+def test_the_case_number_falls_back_to_the_date() -> None:
+    assert render_summary_card(summary()) != render_summary_card(summary(case_number=None))
+
+
+def test_the_promo_line_only_appears_when_it_is_given() -> None:
+    assert render_summary_card(summary()) != render_summary_card(summary(), "t.me/undercover_bot")
+
+
+def test_the_same_summary_renders_the_same_bytes() -> None:
+    assert render_summary_card(summary()) == render_summary_card(summary())
+
+
+def test_an_empty_roster_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        render_summary_card(summary(suspects=()))
+
+
+def test_a_nameless_player_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        render_summary_card(summary(suspects=(Suspect(name="  ", is_spy=True, out_order=None),)))
+
+
+def test_a_blank_word_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        render_summary_card(summary(word="\n"))
+
+
+def test_stray_whitespace_does_not_change_the_card() -> None:
+    assert render_summary_card(summary(word="  пицца ")) == render_summary_card(summary())
+
+
+CROWD = tuple(
+    Suspect(name=f"Аполлинария-Иннокентия {index}", is_spy=index < 5, out_order=index or None)
+    for index in range(16)
+)
+
+SUMMARY_LAYOUT_CASES: tuple[tuple[GameSummary, str], ...] = (
+    (summary(), BACKGROUND_NEUTRAL),
+    (summary(winner=Winner.SPIES), BACKGROUND_UNDERCOVER),
+    (summary(winner=None), BACKGROUND_UNDERCOVER),
+    (summary(suspects=TABLE[:2]), BACKGROUND_NEUTRAL),
+    (
+        summary(
+            suspects=CROWD,
+            word="невыносимо длинное загаданное словосочетание про ёлку",
+            hints=tuple(f"подсказка номер {index} про то самое слово" for index in range(5)),
+            ruleset=Ruleset.SUDDEN_DEATH,
+            duration=timedelta(hours=2, minutes=5),
+            rounds=11,
+        ),
+        BACKGROUND_NEUTRAL,
+    ),
+)
+
+
+@pytest.mark.parametrize(("case", "background"), SUMMARY_LAYOUT_CASES)
+def test_the_summary_stays_inside_the_safe_margin(case: GameSummary, background: str) -> None:
+    left, top, right, bottom = content_box(
+        render_summary_card(case, "t.me/undercover_bot"), background
+    )
+    width, height = CARD_SIZE
+
+    assert left >= SAFE_MARGIN
+    assert top >= SAFE_MARGIN
+    assert right <= width - SAFE_MARGIN
+    assert bottom <= height - SAFE_MARGIN

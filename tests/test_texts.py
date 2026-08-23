@@ -1,5 +1,6 @@
 import ast
 import re
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -220,3 +221,15 @@ def test_the_misfire_line_belongs_to_the_spies() -> None:
     assert texts.win_line(Winner.SPIES, misfire=True) == texts.Vote.SPIES_WIN_MISFIRE
     assert texts.win_line(Winner.SPIES) == texts.Vote.SPIES_WIN
     assert texts.win_line(Winner.CIVILIANS, misfire=True) == texts.Vote.CIVILIANS_WIN
+
+
+def test_the_duration_reads_in_minutes() -> None:
+    assert texts.duration_text(timedelta(seconds=0)) == "меньше минуты"
+    assert texts.duration_text(timedelta(seconds=59)) == "меньше минуты"
+    assert texts.duration_text(timedelta(seconds=60)) == "1 мин"
+    assert texts.duration_text(timedelta(minutes=59)) == "59 мин"
+
+
+def test_a_long_game_reads_in_hours() -> None:
+    assert texts.duration_text(timedelta(minutes=60)) == "1 ч 00 мин"
+    assert texts.duration_text(timedelta(minutes=125)) == "2 ч 05 мин"

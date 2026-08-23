@@ -1,4 +1,5 @@
 from collections.abc import Iterable, Mapping, Sequence
+from datetime import timedelta
 from typing import Final
 
 from undercover.game.engine import MAX_NAME_LENGTH, MAX_PLAYERS, MIN_PLAYERS
@@ -319,8 +320,29 @@ class Cards:
     RESULT_SPIES_CAPTION: Final = "ШПИОНЫ"
     RESULT_WORD_CAPTION: Final = "ЗАГАДАННОЕ СЛОВО"
 
+    SUMMARY_CASE: Final = "ДЕЛО № {number}"
+    SUMMARY_CASE_DATE: Final = "ДЕЛО ОТ {date}"
+    SUMMARY_ROSTER: Final = "СОСТАВ"
+    SUMMARY_SPY_TAG: Final = "ШПИОН"
+    SUMMARY_OUT_TAG: Final = "{order}-Й ВЫЛЕТ"
+    SUMMARY_OUT_TAG_SHORT: Final = "{order}-Й"
+    SUMMARY_TAG_JOINER: Final = " · "
+    SUMMARY_HINT_ONE: Final = "подсказка шпиону: «{hints}»"
+    SUMMARY_HINT_MANY: Final = "подсказки шпионам: «{hints}»"
+    SUMMARY_HINT_JOINER: Final = "», «"
+    SUMMARY_METRICS_JOINER: Final = " · "
+    SUMMARY_SHORT_GAME: Final = "меньше минуты"
+    SUMMARY_MINUTES: Final = "{minutes} мин"
+    SUMMARY_HOURS: Final = "{hours} ч {minutes:02d} мин"
+    PROMO: Final = "t.me/{username}"
+
 
 TIMES: Final = ("раз", "раза", "раз")
+ROUNDS: Final = ("круг", "круга", "кругов")
+PLAYERS: Final = ("игрок", "игрока", "игроков")
+
+CASE_DATE_FORMAT: Final = "%d.%m.%Y"
+MINUTES_IN_HOUR: Final = 60
 
 BAR_CELLS: Final = 10
 BAR_FULL: Final = "█"
@@ -379,6 +401,17 @@ def plural(count: int, forms: tuple[str, str, str]) -> str:
             return forms[1]
         case _:
             return forms[2]
+
+
+def duration_text(spent: timedelta) -> str:
+    minutes = int(spent.total_seconds()) // 60
+    if minutes < 1:
+        return Cards.SUMMARY_SHORT_GAME
+
+    hours, rest = divmod(minutes, MINUTES_IN_HOUR)
+    if not hours:
+        return Cards.SUMMARY_MINUTES.format(minutes=minutes)
+    return Cards.SUMMARY_HOURS.format(hours=hours, minutes=rest)
 
 
 def countdown_line(seconds_left: int, total: int) -> str:
