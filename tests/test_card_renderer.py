@@ -6,6 +6,8 @@ import pytest
 from PIL import Image, ImageChops
 
 from undercover.game.models import Winner
+from undercover.media.blocks import Block, headline
+from undercover.media.canvas import render
 from undercover.media.card_renderer import (
     render_ballot_card,
     render_civilian_card,
@@ -20,9 +22,11 @@ from undercover.media.layout import (
     BACKGROUND_UNDERCOVER,
     CARD_FORMAT,
     CARD_SIZE,
+    CONTENT_HEIGHT,
     CONTENT_WIDTH,
     FONT_BOLD,
     FONT_REGULAR,
+    GLOW_COLD,
     HEADLINE_MAX_SIZE,
     HINT_MAX_SIZE,
     SAFE_MARGIN,
@@ -90,8 +94,8 @@ def test_verdict_card_is_a_photo_of_card_size() -> None:
 
 
 def test_renderers_are_synchronous() -> None:
-    for render in RENDERERS:
-        assert not inspect.iscoroutinefunction(render), render.__name__
+    for renderer in RENDERERS:
+        assert not inspect.iscoroutinefunction(renderer), renderer.__name__
 
 
 JPEG_ARTEFACT_TOLERANCE = 24
@@ -323,6 +327,33 @@ def test_every_card_is_signed_at_the_bottom(
     assert (
         band.convert("L").point(lambda level: level > JPEG_ARTEFACT_TOLERANCE).getbbox() is not None
     )
+
+
+PROMO = "t.me/undercover_bot"
+
+
+def signed_blocks() -> tuple[Block, ...]:
+    return (headline("Аня"),)
+
+
+def test_the_promo_line_changes_the_footer() -> None:
+    quiet = render(BACKGROUND_NEUTRAL, GLOW_COLD, signed_blocks())
+    promoted = render(BACKGROUND_NEUTRAL, GLOW_COLD, signed_blocks(), PROMO)
+
+    assert quiet != promoted
+
+
+def test_the_promo_line_stays_inside_the_safe_margin() -> None:
+    _, _, _, bottom = content_box(
+        render(BACKGROUND_NEUTRAL, GLOW_COLD, signed_blocks(), PROMO), BACKGROUND_NEUTRAL
+    )
+
+    assert bottom <= CARD_SIZE[1] - SAFE_MARGIN
+
+
+def test_the_content_height_leaves_room_for_the_footer() -> None:
+    assert CARD_SIZE[1] - 2 * SAFE_MARGIN > CONTENT_HEIGHT
+    assert CONTENT_HEIGHT > 0
 
 
 def test_the_ballot_card_is_drawn_on_the_neutral_background() -> None:

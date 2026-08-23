@@ -11,11 +11,17 @@ from undercover.media.layout import (
     CARD_QUALITY,
     CARD_SIZE,
     CARD_WIDTH,
+    CONTENT_HEIGHT,
     FONT_BOLD,
+    FONT_REGULAR,
+    FOOTER_GAP,
     GLOW_BLEED,
     GLOW_BLUR,
     GLOW_OPACITY,
     LAMP_CENTER,
+    PROMO_INK,
+    PROMO_SIZE,
+    PROMO_TRACKING,
     RGB,
     SAFE_MARGIN,
     SHADOW_BLUR,
@@ -31,7 +37,7 @@ from undercover.media.typography import draw_tracked, font, text_width
 from undercover.texts import Cards
 
 
-def render(background: str, glow: RGB, blocks: Sequence[Block]) -> bytes:
+def render(background: str, glow: RGB, blocks: Sequence[Block], promo: str | None = None) -> bytes:
     content = Image.new("RGBA", CARD_SIZE, (0, 0, 0, 0))
 
     top = _stack_top(sum(block.space_before + block.height for block in blocks))
@@ -39,7 +45,7 @@ def render(background: str, glow: RGB, blocks: Sequence[Block]) -> bytes:
         top += block.space_before
         block.draw(content, round(top))
         top += block.height
-    _wordmark(content)
+    _footer(content, promo)
 
     card = _background(background).copy()
     ink = content.getchannel("A")
@@ -63,10 +69,9 @@ def _background(file_name: str) -> Image.Image:
 
 def _stack_top(total: int) -> float:
     limit = SAFE_MARGIN + GLOW_BLEED
-    available = CARD_HEIGHT - 2 * limit
-    if total >= available:
+    if total >= CONTENT_HEIGHT:
         return (CARD_HEIGHT - total) / 2
-    return min(max(LAMP_CENTER - total / 2, limit), limit + available - total)
+    return min(max(LAMP_CENTER - total / 2, limit), limit + CONTENT_HEIGHT - total)
 
 
 def _bleed(alpha: Image.Image, blur: float, offset: tuple[int, int], opacity: float) -> Image.Image:
@@ -81,14 +86,17 @@ def _bleed(alpha: Image.Image, blur: float, offset: tuple[int, int], opacity: fl
     return shifted
 
 
-def _wordmark(layer: Image.Image) -> None:
-    face = font(FONT_BOLD, WORDMARK_SIZE)
-    width = text_width(face, Cards.SPY_PLATE, WORDMARK_TRACKING)
-    draw_tracked(
-        ImageDraw.Draw(layer),
-        ((CARD_WIDTH - width) / 2, CARD_HEIGHT - SAFE_MARGIN - GLOW_BLEED - WORDMARK_SIZE),
-        Cards.SPY_PLATE,
-        face,
-        WORDMARK_INK,
-        WORDMARK_TRACKING,
+def _footer(layer: Image.Image, promo: str | None) -> None:
+    draw = ImageDraw.Draw(layer)
+    bottom = CARD_HEIGHT - SAFE_MARGIN - GLOW_BLEED
+    lines = (
+        (Cards.SPY_PLATE, font(FONT_BOLD, WORDMARK_SIZE), WORDMARK_INK, WORDMARK_TRACKING),
+        *(((promo, font(FONT_REGULAR, PROMO_SIZE), PROMO_INK, PROMO_TRACKING),) if promo else ()),
     )
+    height = sum(face.size for _, face, _, _ in lines) + FOOTER_GAP * (len(lines) - 1)
+
+    top = bottom - height
+    for text, face, ink, tracking in lines:
+        width = text_width(face, text, tracking)
+        draw_tracked(draw, ((CARD_WIDTH - width) / 2, top), text, face, ink, tracking)
+        top += face.size + FOOTER_GAP
