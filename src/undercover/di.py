@@ -1,4 +1,3 @@
-import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from functools import partial
@@ -9,12 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from undercover.config import Settings
 from undercover.db.session import check_database_connection, create_engine, create_sessionmaker
+from undercover.log import get_logger
 from undercover.redis.client import check_redis_connection, create_redis_client
 from undercover.redis.dialog_state import DialogStateRepository
 from undercover.redis.game_state import GameStateRepository
 from undercover.redis.lobby_state import LobbyRepository
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class DependencyUnavailableError(RuntimeError):
@@ -81,4 +81,4 @@ async def _probe(service: str, target: str, check: Callable[[], Awaitable[None]]
         raise DependencyUnavailableError(
             f"нет подключения к {service} ({target}): {type(error).__name__}: {error}"
         ) from error
-    logger.info("подключение к %s (%s) установлено", service, target)
+    logger.info("dependency.ready", service=service, target=target)

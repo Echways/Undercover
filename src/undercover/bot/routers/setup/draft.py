@@ -1,20 +1,13 @@
 from dataclasses import dataclass
 from typing import Final, TypedDict, cast
 
-from aiogram.fsm.state import State, StatesGroup
 from aiogram_dialog import DialogManager
 from aiogram_dialog.widgets.kbd import ManagedMultiselect
 
+from undercover.bot.routers.setup.states import Setup
 from undercover.game.engine import offers_a_choice
+from undercover.game.settings import GameSettings
 from undercover.texts import Setup as SetupTexts
-
-
-class Setup(StatesGroup):
-    ask_players_count = State()
-    ask_spies_count = State()
-    ask_player_names = State()
-    ask_categories = State()
-    confirm_start = State()
 
 
 class CategoryItem(TypedDict):
@@ -23,7 +16,7 @@ class CategoryItem(TypedDict):
 
 
 PLAYERS_COUNT: Final = "players_count"
-SPIES_COUNT: Final = "spies_count"
+SETTINGS: Final = "settings"
 NAMES: Final = "names"
 CATEGORIES: Final = "categories"
 CHOSEN_CATEGORIES: Final = "chosen_categories"
@@ -36,7 +29,7 @@ CATEGORIES_PER_PAGE: Final = 6
 @dataclass(frozen=True, slots=True)
 class SetupDraft:
     players_count: int | None
-    spies_count: int | None
+    settings: GameSettings
     names: tuple[str, ...]
     categories: tuple[CategoryItem, ...]
     chosen_ids: frozenset[int]
@@ -46,11 +39,14 @@ class SetupDraft:
         data = manager.dialog_data
         return cls(
             players_count=data.get(PLAYERS_COUNT),
-            spies_count=data.get(SPIES_COUNT),
+            settings=GameSettings.model_validate(data.get(SETTINGS, {})),
             names=tuple(data.get(NAMES, ())),
             categories=tuple(data.get(CATEGORIES, ())),
             chosen_ids=frozenset(category_picker(manager).get_checked()),
         )
+
+    def save(self, manager: DialogManager) -> None:
+        manager.dialog_data[SETTINGS] = self.settings.model_dump(mode="json")
 
     @property
     def chosen_categories(self) -> tuple[CategoryItem, ...]:

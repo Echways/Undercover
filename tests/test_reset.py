@@ -15,7 +15,7 @@ from fake_games import FakeGameStateRepository
 from fake_lobbies import FakeLobbyRepository
 from undercover.bot.routers.reset import create_reset_router
 from undercover.bot.turn_clock import KeyedLocks, Turn, TurnClock, TurnKeeper, TurnView
-from undercover.game.models import GameMode, LobbyPlayer, LobbyState
+from undercover.game.models import LobbyPlayer, LobbyState, Seating
 from undercover.texts import RESET_COMMAND, Reset
 
 IDLE_TICK = timedelta(minutes=1)
@@ -91,7 +91,7 @@ async def test_an_idle_chat_has_nothing_to_reset(table: Table) -> None:
 
 
 async def test_the_host_drops_a_stuck_game(table: Table) -> None:
-    await table.games.save(make_state(mode=GameMode.GROUP, ids=(HOST_ID, 22, 33, 44)))
+    await table.games.save(make_state(seating=Seating.GROUP, ids=(HOST_ID, 22, 33, 44)))
 
     await table.send()
 
@@ -109,7 +109,7 @@ async def test_the_host_drops_a_stuck_lobby(table: Table) -> None:
 
 
 async def test_a_reset_clears_both_the_lobby_and_the_game(table: Table) -> None:
-    await table.games.save(make_state(mode=GameMode.GROUP))
+    await table.games.save(make_state(seating=Seating.GROUP))
     await table.lobbies.save(lobby())
 
     await table.send()
@@ -119,7 +119,7 @@ async def test_a_reset_clears_both_the_lobby_and_the_game(table: Table) -> None:
 
 
 async def test_a_reset_wipes_the_dialogs_left_in_the_chat(table: Table) -> None:
-    await table.games.save(make_state(mode=GameMode.GROUP))
+    await table.games.save(make_state(seating=Seating.GROUP))
     table.dialogs.opened_in(CHAT_ID)
 
     await table.send()
@@ -138,7 +138,7 @@ async def test_a_stuck_dialog_alone_is_worth_a_reset(table: Table) -> None:
 
 
 async def test_a_reset_stops_the_turn_clock(table: Table) -> None:
-    state = make_state(mode=GameMode.GROUP, turn_seconds=60)
+    state = make_state(seating=Seating.GROUP, turn_seconds=60)
     await table.games.save(state)
     state.turn_deadline = datetime.now(UTC) + timedelta(hours=1)
     table.keeper.clock.start(table.bot, state, IDLE_VIEW, _never_expires)
@@ -150,7 +150,7 @@ async def test_a_reset_stops_the_turn_clock(table: Table) -> None:
 
 
 async def test_a_bystander_may_not_drop_someone_elses_game(table: Table) -> None:
-    await table.games.save(make_state(mode=GameMode.GROUP))
+    await table.games.save(make_state(seating=Seating.GROUP))
 
     await table.send(user_id=OUTSIDER_ID)
 
@@ -159,7 +159,7 @@ async def test_a_bystander_may_not_drop_someone_elses_game(table: Table) -> None
 
 
 async def test_a_chat_admin_may_drop_a_game_they_do_not_host(table: Table) -> None:
-    await table.games.save(make_state(mode=GameMode.GROUP))
+    await table.games.save(make_state(seating=Seating.GROUP))
     table.session.results[GetChatMember] = [chat_admin(OUTSIDER_ID)]
 
     await table.send(user_id=OUTSIDER_ID)
@@ -169,7 +169,7 @@ async def test_a_chat_admin_may_drop_a_game_they_do_not_host(table: Table) -> No
 
 
 async def test_unreadable_rights_do_not_open_the_reset(table: Table) -> None:
-    await table.games.save(make_state(mode=GameMode.GROUP))
+    await table.games.save(make_state(seating=Seating.GROUP))
     table.session.failures[GetChatMember] = TelegramBadRequest(
         method=GetChatMember(chat_id=CHAT_ID, user_id=OUTSIDER_ID), message="user not found"
     )

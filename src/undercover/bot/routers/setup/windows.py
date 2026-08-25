@@ -5,15 +5,14 @@ from aiogram_dialog.widgets.input import TextInput
 from aiogram_dialog.widgets.kbd import Button, Column, Multiselect, Row, ScrollingGroup
 from aiogram_dialog.widgets.text import Const, Format, Multi
 
-from undercover.bot.routers.reveal import PhaseStarter
-from undercover.bot.routers.setup_draft import (
+from undercover.bot.phases import PhaseStarter
+from undercover.bot.routers.setup.draft import (
     CATEGORIES,
     CATEGORIES_PER_PAGE,
     CATEGORY_PICKER,
     ERROR,
-    Setup,
 )
-from undercover.bot.routers.setup_handlers import (
+from undercover.bot.routers.setup.handlers import (
     draft_getter,
     load_categories,
     on_autofill_names,
@@ -23,13 +22,14 @@ from undercover.bot.routers.setup_handlers import (
     on_player_name,
     on_players_count,
     on_restart,
-    on_spies_count,
+    on_ruleset,
+    on_spies,
+    on_turn_seconds,
     on_undo_name,
-    parse_count,
-    parse_name,
-    parse_players_count,
-    play,
 )
+from undercover.bot.routers.setup.parsers import parse_name, parse_players_count
+from undercover.bot.routers.setup.start_game import play
+from undercover.bot.routers.setup.states import Setup
 from undercover.game.catalog import CachedCatalog
 from undercover.texts import Buttons
 from undercover.texts import Setup as SetupTexts
@@ -50,21 +50,6 @@ def create_setup_dialog(catalog: CachedCatalog, start_reveal: PhaseStarter) -> D
                 on_error=on_input_error,
             ),
             state=Setup.ask_players_count,
-            parse_mode=None,
-        ),
-        Window(
-            Multi(
-                Format(SetupTexts.ASK_SPIES_COUNT),
-                Format(SetupTexts.ERROR_PREFIX, when=ERROR),
-                sep="\n\n",
-            ),
-            TextInput(
-                id="spies_count_input",
-                type_factory=parse_count,
-                on_success=on_spies_count,
-                on_error=on_input_error,
-            ),
-            state=Setup.ask_spies_count,
             parse_mode=None,
         ),
         Window(
@@ -122,6 +107,11 @@ def create_setup_dialog(catalog: CachedCatalog, start_reveal: PhaseStarter) -> D
                 Format(SetupTexts.ERROR_PREFIX, when=ERROR),
                 sep="\n\n",
             ),
+            Row(
+                Button(Format("{spies_label}"), id="spies", on_click=on_spies),
+                Button(Format("{turn_label}"), id="turn_seconds", on_click=on_turn_seconds),
+            ),
+            Button(Format("{ruleset_label}"), id="ruleset", on_click=on_ruleset),
             Row(
                 Button(
                     Const(Buttons.PLAY),

@@ -1,43 +1,56 @@
+from collections.abc import Callable, Mapping
+from typing import Final
+
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
 from undercover.bot.acks import ack
+from undercover.bot.callbacks import LobbyAction, LobbyCB
+from undercover.bot.deep_links import join_link, rules_link
 from undercover.bot.filters import IN_GROUP
-from undercover.bot.lobby_view import (
-    LobbyAction,
-    LobbyCB,
-    join_link,
-    render_lobby,
-    rules_link,
-)
+from undercover.bot.lobby_view import render_lobby
 from undercover.bot.message_utils import show_or_resend_text
+from undercover.bot.phases import PhaseStarter
 from undercover.bot.role_delivery import deliver_roles
-from undercover.bot.routers.reveal import PhaseStarter
 from undercover.game.catalog import CachedCatalog
-from undercover.game.engine import (
-    EmptyWordCatalogError,
-    GameRulesError,
-    create_session,
-    secure_rng,
-)
-from undercover.game.lobby import (
-    cycle_spies_count,
+from undercover.game.engine import EmptyWordCatalogError, create_session, secure_rng
+from undercover.game.lobby import ensure_playable, leave, seat
+from undercover.game.models import LobbyState, LobbyView, Seating
+from undercover.game.rules import GameRulesError
+from undercover.game.settings import (
+    cycle_spies,
     cycle_turn_seconds,
-    ensure_playable,
-    leave,
-    seat,
     toggle_category,
     toggle_ruleset,
 )
-from undercover.game.models import GameMode, LobbyState, LobbyView
 from undercover.log import get_logger
 from undercover.redis.game_state import GameStateRepository
 from undercover.redis.lobby_state import LobbyRepository
-from undercover.texts import GAME_COMMAND, Errors, Lobby, Rules, empty_catalog_text
+from undercover.texts import GAME_COMMAND, RULE_REFUSALS, Errors, Lobby, Rules, empty_catalog_text
 
 logger = get_logger(__name__)
+
+
+LobbyMutator = Callable[[LobbyState, int], None]
+
+
+def _set_view(view: LobbyView) -> LobbyMutator:
+    def apply(lobby: LobbyState, _value: int) -> None:
+        lobby.view = view
+
+    return apply
+
+
+LOBBY_MUTATORS: Final[Mapping[LobbyAction, LobbyMutator]] = {
+    LobbyAction.SPIES: lambda lobby, _value: cycle_spies(lobby.settings, len(lobby.players)),
+    LobbyAction.TURN: lambda lobby, _value: cycle_turn_seconds(lobby.settings),
+    LobbyAction.RULESET: lambda lobby, _value: toggle_ruleset(lobby.settings),
+    LobbyAction.CATEGORY: lambda lobby, value: toggle_category(lobby.settings, value),
+    LobbyAction.CATEGORIES: _set_view(LobbyView.CATEGORIES),
+    LobbyAction.DONE: _set_view(LobbyView.ROSTER),
+}
 
 
 def create_lobby_router(catalog: CachedCatalog, start_discussion: PhaseStarter) -> Router:
@@ -72,7 +85,7 @@ def create_lobby_router(catalog: CachedCatalog, start_discussion: PhaseStarter) 
         if lobby is None:
             return
         if lobby.index_of(callback.from_user.id) is not None:
-            await callback.answer(Lobby.ALREADY_IN, show_alert=True)
+            await ack(callback, Lobby.ALREADY_IN, show_alert=True)
             return
         if not await _ping_direct_chat(bot, callback, lobby.chat_id):
             return
@@ -80,11 +93,11 @@ def create_lobby_router(catalog: CachedCatalog, start_discussion: PhaseStarter) 
         try:
             seat(lobby, callback.from_user.id, callback.from_user.full_name)
         except GameRulesError as error:
-            await callback.answer(str(error), show_alert=True)
+            await ack(callback, RULE_REFUSALS[error.rule], show_alert=True)
             return
 
         await redraw(bot, lobbies, lobby)
-        await callback.answer()
+        await ack(callback)
 
     @router.callback_query(LobbyCB.filter(F.action == LobbyAction.LEAVE))
     async def cb_leave(callback: CallbackQuery, bot: Bot, lobbies: LobbyRepository) -> None:
@@ -94,59 +107,23 @@ def create_lobby_router(catalog: CachedCatalog, start_discussion: PhaseStarter) 
         try:
             leave(lobby, callback.from_user.id)
         except GameRulesError:
-            await callback.answer(Lobby.NOT_IN, show_alert=True)
+            await ack(callback, Lobby.NOT_IN, show_alert=True)
             return
 
         await redraw(bot, lobbies, lobby)
-        await callback.answer()
-
-    @router.callback_query(LobbyCB.filter(F.action == LobbyAction.SPIES))
-    async def cb_spies(callback: CallbackQuery, bot: Bot, lobbies: LobbyRepository) -> None:
-        lobby = await _host_lobby(callback, lobbies)
-        if lobby is None:
-            return
-        cycle_spies_count(lobby)
-        await redraw(bot, lobbies, lobby)
-        await callback.answer()
-
-    @router.callback_query(LobbyCB.filter(F.action == LobbyAction.TURN))
-    async def cb_turn_seconds(callback: CallbackQuery, bot: Bot, lobbies: LobbyRepository) -> None:
-        lobby = await _host_lobby(callback, lobbies)
-        if lobby is None:
-            return
-        cycle_turn_seconds(lobby)
-        await redraw(bot, lobbies, lobby)
-        await callback.answer()
-
-    @router.callback_query(LobbyCB.filter(F.action == LobbyAction.RULESET))
-    async def cb_ruleset(callback: CallbackQuery, bot: Bot, lobbies: LobbyRepository) -> None:
-        lobby = await _host_lobby(callback, lobbies)
-        if lobby is None:
-            return
-        toggle_ruleset(lobby)
-        await redraw(bot, lobbies, lobby)
-        await callback.answer()
+        await ack(callback)
 
     @router.callback_query(LobbyCB.filter(F.action == LobbyAction.RULES))
     async def cb_rules(callback: CallbackQuery, bot: Bot) -> None:
         try:
             await bot.send_message(callback.from_user.id, Rules.FULL)
         except TelegramForbiddenError:
-            await callback.answer(url=await rules_link(bot))
+            await ack(callback, url=await rules_link(bot))
             return
-        await callback.answer(Lobby.RULES_SENT)
+        await ack(callback, Lobby.RULES_SENT)
 
-    @router.callback_query(LobbyCB.filter(F.action == LobbyAction.CATEGORIES))
-    async def cb_categories(callback: CallbackQuery, bot: Bot, lobbies: LobbyRepository) -> None:
-        lobby = await _host_lobby(callback, lobbies)
-        if lobby is None:
-            return
-        lobby.view = LobbyView.CATEGORIES
-        await redraw(bot, lobbies, lobby)
-        await callback.answer()
-
-    @router.callback_query(LobbyCB.filter(F.action == LobbyAction.CATEGORY))
-    async def cb_category(
+    @router.callback_query(LobbyCB.filter(F.action.in_(set(LOBBY_MUTATORS))))
+    async def cb_settings(
         callback: CallbackQuery,
         callback_data: LobbyCB,
         bot: Bot,
@@ -155,20 +132,9 @@ def create_lobby_router(catalog: CachedCatalog, start_discussion: PhaseStarter) 
         lobby = await _host_lobby(callback, lobbies)
         if lobby is None:
             return
-        toggle_category(lobby, callback_data.value)
+        LOBBY_MUTATORS[callback_data.action](lobby, callback_data.value)
         await redraw(bot, lobbies, lobby)
-        await callback.answer()
-
-    @router.callback_query(LobbyCB.filter(F.action == LobbyAction.DONE))
-    async def cb_categories_done(
-        callback: CallbackQuery, bot: Bot, lobbies: LobbyRepository
-    ) -> None:
-        lobby = await _host_lobby(callback, lobbies)
-        if lobby is None:
-            return
-        lobby.view = LobbyView.ROSTER
-        await redraw(bot, lobbies, lobby)
-        await callback.answer()
+        await ack(callback)
 
     @router.callback_query(LobbyCB.filter(F.action == LobbyAction.PLAY))
     async def cb_play(
@@ -187,8 +153,8 @@ def create_lobby_router(catalog: CachedCatalog, start_discussion: PhaseStarter) 
         try:
             ensure_playable(lobby)
         except GameRulesError as error:
-            logger.info("lobby.play_refused", chat_id=lobby.chat_id, reason=str(error))
-            await ack(callback, str(error), show_alert=True)
+            logger.info("lobby.play_refused", chat_id=lobby.chat_id, reason=error.rule.value)
+            await ack(callback, RULE_REFUSALS[error.rule], show_alert=True)
             return
 
         await ack(callback)
@@ -196,10 +162,10 @@ def create_lobby_router(catalog: CachedCatalog, start_discussion: PhaseStarter) 
             "lobby.play_requested",
             chat_id=lobby.chat_id,
             players=len(lobby.players),
-            spies=lobby.spies_count,
-            ruleset=lobby.ruleset.value,
-            turn_seconds=lobby.turn_seconds,
-            categories=sorted(lobby.category_ids),
+            spies=lobby.settings.spies_count,
+            ruleset=lobby.settings.ruleset.value,
+            turn_seconds=lobby.settings.turn_seconds,
+            categories=sorted(lobby.settings.category_ids),
         )
 
         try:
@@ -209,21 +175,21 @@ def create_lobby_router(catalog: CachedCatalog, start_discussion: PhaseStarter) 
                     host_user_id=lobby.host_user_id,
                     player_names=[player.name for player in lobby.players],
                     player_ids=[player.user_id for player in lobby.players],
-                    spies_count=lobby.spies_count,
+                    spies_count=lobby.settings.spies_count,
                     words=words,
                     rng=secure_rng(),
-                    category_ids=lobby.category_ids,
-                    mode=GameMode.GROUP,
-                    ruleset=lobby.ruleset,
-                    turn_seconds=lobby.turn_seconds,
+                    category_ids=lobby.settings.category_ids,
+                    seating=Seating.GROUP,
+                    ruleset=lobby.settings.ruleset,
+                    turn_seconds=lobby.settings.turn_seconds,
                 )
         except EmptyWordCatalogError:
             logger.warning(
                 "lobby.empty_catalog",
                 chat_id=lobby.chat_id,
-                categories=sorted(lobby.category_ids),
+                categories=sorted(lobby.settings.category_ids),
             )
-            await bot.send_message(lobby.chat_id, empty_catalog_text(lobby.category_ids))
+            await bot.send_message(lobby.chat_id, empty_catalog_text(lobby.settings.category_ids))
             return
 
         undelivered = await deliver_roles(bot, state)
@@ -262,7 +228,7 @@ def create_lobby_router(catalog: CachedCatalog, start_discussion: PhaseStarter) 
 async def _open_lobby(callback: CallbackQuery, lobbies: LobbyRepository) -> LobbyState | None:
     lobby = None if callback.message is None else await lobbies.load(callback.message.chat.id)
     if lobby is None:
-        await callback.answer(Errors.LOBBY_CLOSED, show_alert=True)
+        await ack(callback, Errors.LOBBY_CLOSED, show_alert=True)
     return lobby
 
 
@@ -271,7 +237,7 @@ async def _host_lobby(callback: CallbackQuery, lobbies: LobbyRepository) -> Lobb
     if lobby is None:
         return None
     if callback.from_user.id != lobby.host_user_id:
-        await callback.answer(Errors.NOT_HOST, show_alert=True)
+        await ack(callback, Errors.NOT_HOST, show_alert=True)
         return None
     return lobby
 
@@ -280,6 +246,6 @@ async def _ping_direct_chat(bot: Bot, callback: CallbackQuery, chat_id: int) -> 
     try:
         await bot.send_message(callback.from_user.id, Lobby.DM_WELCOME)
     except TelegramForbiddenError:
-        await callback.answer(url=await join_link(bot, chat_id))
+        await ack(callback, url=await join_link(bot, chat_id))
         return False
     return True

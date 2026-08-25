@@ -1,7 +1,7 @@
 import pytest
 from redis.asyncio import Redis
 
-from undercover.game.models import LobbyPlayer, LobbyState, LobbyView
+from undercover.game.models import GameSettings, LobbyPlayer, LobbyState, LobbyView
 from undercover.redis.lobby_state import LOBBY_KEY_PREFIX, LobbyRepository
 
 pytestmark = pytest.mark.integration
@@ -15,8 +15,7 @@ def lobby() -> LobbyState:
         host_user_id=777,
         message_id=42,
         players=[LobbyPlayer(user_id=1, name="Аня")],
-        spies_count=1,
-        category_ids=[7],
+        settings=GameSettings(spies_count=1, category_ids=[7]),
         view=LobbyView.CATEGORIES,
     )
 
@@ -50,3 +49,7 @@ async def test_lobby_key_expires_so_a_forgotten_lobby_does_not_linger(
     await LobbyRepository(redis_client).save(lobby())
 
     assert await redis_client.ttl(f"{LOBBY_KEY_PREFIX}{CHAT_ID}") > 0
+
+
+def test_lobby_keys_carry_a_version() -> None:
+    assert LOBBY_KEY_PREFIX == "lobby:v1:"

@@ -18,10 +18,14 @@ def query_expired(error: BaseException) -> bool:
 
 
 async def ack(
-    callback: CallbackQuery, text: str | None = None, *, show_alert: bool = False
+    callback: CallbackQuery,
+    text: str | None = None,
+    *,
+    show_alert: bool = False,
+    url: str | None = None,
 ) -> bool:
     try:
-        await callback.answer(text, show_alert=show_alert)
+        await callback.answer(text, show_alert=show_alert, url=url)
     except TelegramBadRequest as error:
         if not query_expired(error):
             raise

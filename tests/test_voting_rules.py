@@ -6,11 +6,11 @@ from undercover.game.engine import GameRulesError
 from undercover.game.models import (
     Direction,
     EliminationBallot,
-    GameMode,
     GameSessionState,
     GameStatus,
     PlayerState,
     Ruleset,
+    Seating,
     Winner,
 )
 from undercover.game.voting import (
@@ -41,14 +41,14 @@ def make_state(
     spies: tuple[int, ...] = (1,),
     out: tuple[int, ...] = (),
     players: int = 4,
-    mode: GameMode = GameMode.GROUP,
+    seating: Seating = Seating.GROUP,
     **overrides: Any,
 ) -> GameSessionState:
     defaults: dict[str, Any] = {
         "session_id": "11111111-1111-1111-1111-111111111111",
         "chat_id": CHAT_ID,
         "host_user_id": HOST_ID,
-        "mode": mode,
+        "seating": seating,
         "status": GameStatus.VOTING,
         "players": [
             PlayerState(
@@ -56,7 +56,7 @@ def make_state(
                 name=NAMES[index],
                 is_spy=index in spies,
                 is_out=index in out,
-                user_id=None if mode is GameMode.HOT_SEAT else 100 + index,
+                user_id=None if seating is Seating.HOT_SEAT else 100 + index,
             )
             for index in range(players)
         ],
@@ -79,7 +79,7 @@ def test_the_group_electorate_is_every_living_player() -> None:
 
 
 def test_the_hot_seat_electorate_is_the_host_alone() -> None:
-    assert electorate(make_state(mode=GameMode.HOT_SEAT)) == [HOST_ID]
+    assert electorate(make_state(seating=Seating.HOT_SEAT)) == [HOST_ID]
 
 
 def test_a_group_player_without_a_telegram_id_cannot_vote() -> None:
@@ -183,7 +183,7 @@ def test_turnout_without_a_ballot_is_empty_but_honest_about_the_electorate() -> 
 
 
 def test_the_hot_seat_host_alone_makes_a_full_turnout() -> None:
-    state = make_state(mode=GameMode.HOT_SEAT)
+    state = make_state(seating=Seating.HOT_SEAT)
     open_direction_ballot(state)
     cast_direction(state, HOST_ID, Direction.VOTE)
 
@@ -233,7 +233,7 @@ def test_an_evenly_split_table_keeps_talking() -> None:
 
 
 def test_the_hot_seat_host_decides_the_direction_with_one_tap() -> None:
-    state = make_state(mode=GameMode.HOT_SEAT)
+    state = make_state(seating=Seating.HOT_SEAT)
     open_direction_ballot(state)
     cast_direction(state, HOST_ID, Direction.VOTE)
 
@@ -287,7 +287,7 @@ def test_a_second_tie_sends_nobody_out() -> None:
 
 
 def test_the_hot_seat_host_eliminates_with_one_tap_and_never_ties() -> None:
-    state = make_state(mode=GameMode.HOT_SEAT)
+    state = make_state(seating=Seating.HOT_SEAT)
     open_elimination_ballot(state, [0, 1, 2, 3])
     cast_elimination(state, HOST_ID, 2)
 

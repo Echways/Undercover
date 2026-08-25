@@ -4,11 +4,10 @@ from time import monotonic
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
 
-from undercover.bot.message_utils import as_photo
+from undercover.bot.cards import card_photo
 from undercover.game.models import GameSessionState, PlayerState
 from undercover.log import get_logger
 from undercover.media.card_renderer import (
-    CARD_SUFFIX,
     render_civilian_card,
     render_spy_card,
 )
@@ -67,7 +66,7 @@ async def _deliver_one(bot: Bot, state: GameSessionState, player: PlayerState) -
     try:
         await bot.send_photo(
             player.user_id,
-            as_photo(image, f"role_{player.order_index}.{CARD_SUFFIX}"),
+            card_photo(image, f"role_{player.order_index}"),
             caption=Delivery.ROLE_CAPTION,
         )
     except TelegramAPIError as error:

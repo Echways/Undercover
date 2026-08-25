@@ -1,8 +1,8 @@
 from typing import Final
 
 from fake_words import catalog
-from undercover.bot.lobby_view import LobbyAction, LobbyCB, lobby_keyboard, lobby_text
-from undercover.bot.stats_view import StatsAction, StatsCB
+from undercover.bot.callbacks import LobbyAction, LobbyCB, StatsAction, StatsCB
+from undercover.bot.lobby_view import lobby_keyboard, lobby_text
 from undercover.game.engine import MAX_PLAYERS
 from undercover.game.models import (
     DEFAULT_TURN_SECONDS,
@@ -49,7 +49,7 @@ def test_the_summary_says_whole_dictionary_when_nothing_is_chosen() -> None:
 
 
 def test_the_summary_lists_the_chosen_categories_by_title() -> None:
-    text = lobby_text(lobby(3, category_ids=[1]), CATALOG)
+    text = lobby_text(lobby(3, settings={"category_ids": [1]}), CATALOG)
 
     assert "Еда" in text
     assert "Города" not in text
@@ -59,9 +59,9 @@ def test_the_roster_keyboard_carries_join_leave_settings_hall_and_start() -> Non
     assert texts_of(lobby(2)) == [
         Buttons.JOIN_LOBBY,
         Buttons.LEAVE_LOBBY,
-        Buttons.RULESET.format(name=RULESET_NAMES[Ruleset.CLASSIC]),
         Buttons.SPIES_COUNT.format(count=1),
         Buttons.TURN_LIMIT.format(seconds=DEFAULT_TURN_SECONDS),
+        Buttons.RULESET.format(name=RULESET_NAMES[Ruleset.CLASSIC]),
         Buttons.CHANGE_CATEGORIES,
         Buttons.RULES,
         Buttons.HALL_OF_FAME,
@@ -93,7 +93,7 @@ def test_the_roster_tells_newcomers_what_the_game_is_about() -> None:
 
 def test_the_summary_names_the_ruleset_and_what_it_costs() -> None:
     classic = lobby_text(lobby(3), CATALOG)
-    sudden_death = lobby_text(lobby(3, ruleset=Ruleset.SUDDEN_DEATH), CATALOG)
+    sudden_death = lobby_text(lobby(3, settings={"ruleset": Ruleset.SUDDEN_DEATH}), CATALOG)
 
     assert RULESET_LINES[Ruleset.CLASSIC] in classic
     assert RULESET_LINES[Ruleset.SUDDEN_DEATH] in sudden_death
@@ -102,7 +102,7 @@ def test_the_summary_names_the_ruleset_and_what_it_costs() -> None:
 def test_the_ruleset_button_shows_the_mode_the_table_plays() -> None:
     sudden_death = Buttons.RULESET.format(name=RULESET_NAMES[Ruleset.SUDDEN_DEATH])
 
-    assert sudden_death in texts_of(lobby(3, ruleset=Ruleset.SUDDEN_DEATH))
+    assert sudden_death in texts_of(lobby(3, settings={"ruleset": Ruleset.SUDDEN_DEATH}))
     assert sudden_death not in texts_of(lobby(3))
 
 
@@ -124,7 +124,7 @@ def test_a_one_category_dictionary_offers_no_choice() -> None:
 
 
 def test_the_category_view_marks_the_chosen_ones_and_offers_done() -> None:
-    state = lobby(2, view=LobbyView.CATEGORIES, category_ids=[1])
+    state = lobby(2, view=LobbyView.CATEGORIES, settings={"category_ids": [1]})
 
     assert Lobby.PICK_CATEGORIES in lobby_text(state, CATALOG)
     assert texts_of(state) == [
@@ -145,4 +145,4 @@ def test_the_turn_button_shows_the_current_length() -> None:
 
 
 def test_the_turn_button_says_plainly_when_the_timer_is_off() -> None:
-    assert Buttons.TURN_OFF in texts_of(lobby(2, turn_seconds=0))
+    assert Buttons.TURN_OFF in texts_of(lobby(2, settings={"turn_seconds": 0}))

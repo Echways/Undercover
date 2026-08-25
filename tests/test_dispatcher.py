@@ -127,7 +127,11 @@ async def test_the_command_menu_is_published_on_startup(dispatcher: Dispatcher) 
     await dispatcher.emit_startup(bot=bot)
 
     published = session.calls(SetMyCommands)
-    assert [command.command for command in published[0].commands] == ["start"]
+    assert [command.command for command in published[0].commands] == [
+        "start",
+        "undercover_stats",
+        "undercover_reset",
+    ]
 
 
 async def test_group_chats_see_the_game_command_in_the_menu(dispatcher: Dispatcher) -> None:
@@ -141,7 +145,7 @@ async def test_group_chats_see_the_game_command_in_the_menu(dispatcher: Dispatch
         if isinstance(call.scope, BotCommandScopeAllGroupChats)
     ]
     assert [[command.command for command in call.commands] for call in group_menus] == [
-        ["start", "undercover", "undercover_stats", "undercover_reset"]
+        ["undercover", "undercover_stats", "undercover_reset"]
     ]
 
 
@@ -156,7 +160,23 @@ async def test_private_chats_are_not_offered_a_group_only_command(
     published = [[command.command for command in call.commands] for call in default_menus]
 
     assert all("undercover" not in commands for commands in published)
-    assert all("undercover_stats" not in commands for commands in published)
+
+
+async def test_group_chats_are_not_offered_a_private_only_command(
+    dispatcher: Dispatcher,
+) -> None:
+    session = FakeSession()
+
+    await dispatcher.emit_startup(bot=make_bot(session))
+
+    group_menus = [
+        call
+        for call in session.calls(SetMyCommands)
+        if isinstance(call.scope, BotCommandScopeAllGroupChats)
+    ]
+    published = [[command.command for command in call.commands] for call in group_menus]
+
+    assert all("start" not in commands for commands in published)
 
 
 async def test_a_telegram_outage_does_not_stop_the_start(

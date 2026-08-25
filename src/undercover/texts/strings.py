@@ -1,10 +1,6 @@
-from collections.abc import Iterable, Mapping, Sequence
-from datetime import timedelta
 from typing import Final
 
 from undercover.game.engine import MAX_NAME_LENGTH, MAX_PLAYERS, MIN_PLAYERS
-from undercover.game.models import Ruleset, Winner
-from undercover.game.voting import Refusal
 
 BRAND: Final = "Undercover"
 
@@ -16,9 +12,9 @@ RESET_COMMAND: Final = "undercover_reset"
 class Start:
     GREETING: Final = (
         f"{BRAND} — игра в шпиона.\n\n"
-        "Все за столом получают одно и то же слово. Все, кроме шпиона, — ему "
-        "достаётся лишь подсказка. Дальше по кругу: одна ассоциация от каждого, "
-        "и вы ищете того, кто выкручивается.\n\n"
+        "Все за столом получают одно и то же слово. Все, кроме шпионов: им "
+        "достаётся только подсказка. Дальше по кругу — одна ассоциация от "
+        "каждого, и вы ищете тех, кто выкручивается.\n\n"
         "Здесь партия идёт с одного телефона: он передаётся из рук в руки, "
         "карточки открывает ведущий.\n\n"
         "Играете не за одним столом? Добавьте бота в группу и отправьте там "
@@ -29,9 +25,9 @@ class Start:
         "Партия с одного телефона идёт у меня в личке — напишите мне туда /start.\n"
         f"А здесь соберите общий стол: /{GAME_COMMAND}, и слово придёт каждому в личку."
     )
-    COMMAND_DESCRIPTION: Final = "Новая партия"
-    GAME_COMMAND_DESCRIPTION: Final = "Партия в группе"
-    STATS_COMMAND_DESCRIPTION: Final = "Зал славы чата"
+    COMMAND_DESCRIPTION: Final = "Новая партия с одного телефона"
+    GAME_COMMAND_DESCRIPTION: Final = "Собрать партию в этом чате"
+    STATS_COMMAND_DESCRIPTION: Final = "Статистика и зал славы"
     RESET_COMMAND_DESCRIPTION: Final = "Сбросить зависшую партию"
 
 
@@ -39,11 +35,6 @@ class Setup:
     ASK_PLAYERS_COUNT: Final = (
         f"{BRAND} — новая партия.\n\n"
         f"Сколько игроков за столом? Пришлите число от {MIN_PLAYERS} до {MAX_PLAYERS}."
-    )
-    ASK_SPIES_COUNT: Final = (
-        "Игроков за столом: {players_count}.\n\n"
-        "Сколько среди них шпионов? Число от 1 до {max_spies}.\n"
-        "Классика — один шпион на компанию."
     )
     ASK_PLAYER_NAMES: Final = (
         "Имена — по одному в сообщении.\n"
@@ -73,11 +64,7 @@ class Setup:
     NOT_A_NUMBER: Final = "Это не число. Пришлите цифрами — например, 6."
     BAD_PLAYERS_COUNT: Final = (
         f"Игроков должно быть от {MIN_PLAYERS} до {MAX_PLAYERS}: вдвоём партия уже "
-        "складывается, а больше шестнадцати телефон не обойдёт."
-    )
-    BAD_SPIES_COUNT: Final = (
-        "Шпионов на {players_count} игроков — от 1 до {max_spies}: мирные должны "
-        "остаться в большинстве, иначе искать некого."
+        "складывается, а больше телефон по кругу не обойдёт."
     )
     EMPTY_NAME: Final = "Имя пустое. Напишите, как называть игрока."
     TOO_LONG_NAME: Final = (
@@ -93,12 +80,12 @@ class Setup:
 class Rules:
     FULL: Final = (
         f"{BRAND} — игра в шпиона.\n\n"
-        "Все за столом получают одно и то же слово. Все, кроме шпиона: ему "
-        "достаётся только подсказка, а само слово он выясняет по чужим "
-        "ассоциациям.\n\n"
+        "Все за столом получают одно и то же слово. Все, кроме шпионов: им "
+        "достаётся только подсказка, а само слово они выясняют по чужим "
+        "ассоциациям. Сколько шпионов за столом, ведущий задаёт до старта.\n\n"
         "Ход партии:\n"
         "1. Круг высказываний — каждый называет одну ассоциацию к слову. Само "
-        "слово вслух не произносят: мирный так дарит разгадку шпиону, а шпион "
+        "слово вслух не произносят: мирный так дарит разгадку шпионам, а шпион "
         "выдаёт себя.\n"
         "2. После круга стол решает, говорить ещё или голосовать. Решает "
         "половина состава плюс один голос.\n"
@@ -121,8 +108,8 @@ class Rules:
 class Lobby:
     TITLE: Final = f"{BRAND} — набор в партию."
     SYNOPSIS: Final = (
-        "Всем одно слово, шпиону — только подсказка. По кругу называете по одной "
-        "ассоциации и ищете того, кто выкручивается."
+        "Всем одно слово, шпионам — только подсказка. По кругу называете по одной "
+        "ассоциации и ищете тех, кто выкручивается."
     )
     ROSTER: Final = "В игре ({count} из {limit}):\n{names_list}"
     EMPTY_ROSTER: Final = "Пока никого."
@@ -147,6 +134,12 @@ class Lobby:
 
     ALREADY_IN: Final = "Вы уже в составе."
     NOT_IN: Final = "Вас нет в составе."
+    FULL: Final = f"В составе уже {MAX_PLAYERS} игроков — больше стол не вместит."
+    TOO_FEW: Final = f"Для партии нужно хотя бы {MIN_PLAYERS} игрока."
+    HOST_MUST_PLAY: Final = "Ведущий играет вместе со всеми — нажмите «Я в игре», потом начинайте."
+    NAME_CLASH: Final = (
+        "За столом слишком много ваших тёзок. Смените имя в Telegram и зайдите снова."
+    )
     DM_WELCOME: Final = "Вы в составе. Слово придёт сюда, как только ведущий начнёт партию."
     STARTED: Final = "Партия началась. Роли ушли в личку."
     DELIVERY_FAILED: Final = "Роли дошли не всем — партия не началась."
@@ -157,7 +150,7 @@ class Lobby:
 
 
 class Reveal:
-    TURN_CAPTION: Final = "Ход {position} из {total}. Передайте телефон: {name}"
+    TURN_CAPTION: Final = "Карточка {position} из {total}. Передайте телефон: {name}"
     VIEWED_CAPTION: Final = "{name}: карточка открыта. Запомните её и передайте телефон дальше."
     LAST_VIEWED_CAPTION: Final = "{name}: карточка открыта. Все посмотрели — время обсуждать."
 
@@ -179,14 +172,14 @@ class Discussion:
     SPY_TITLE_MANY: Final = "Шпионы"
     FINAL_CAPTION: Final = "{title}: {spies}\nЗагаданное слово: {word}"
 
-    NOT_YOUR_TURN: Final = "Ход передаёт тот, кто сейчас говорит, или ведущий."
+    NOT_YOUR_TURN: Final = "Сейчас не ваш ход — партию двигает тот, кто говорит, или ведущий."
     WRONG_PHASE: Final = "Обсуждение уже закончено."
     GAME_IS_ON: Final = "Партия ещё идёт — сначала доиграйте её."
     ALL_SPOKE: Final = "Высказались все — время искать шпиона."
 
 
 class Vote:
-    DIRECTION_TALLY: Final = "Ещё круг — {round}, голосуем — {vote}"
+    DIRECTION_TALLY: Final = "За ещё круг: {round} · За голосование: {vote}"
     DIRECTION_PROMPT: Final = "Решает большинство. Пока не решите — партия ждёт."
     COUNTED: Final = "Голос учтён."
     HOT_SEAT_PROMPT: Final = "Стол решил — отметьте, кто выбывает."
@@ -195,6 +188,7 @@ class Vote:
     ALREADY_VOTED: Final = "Ваш голос уже учтён."
     NOT_A_VOTER: Final = "Вы не в этой партии."
     IS_OUT: Final = "Вы выбыли — голосуют оставшиеся."
+    STALE_OPTION: Final = "Этот бюллетень уже закрыт — смотрите на экран партии."
 
     TIE: Final = "Голоса разделились. Переголосуем между лидерами."
     NO_ELIMINATION: Final = "Голоса снова разделились — никто не выбывает."
@@ -212,7 +206,7 @@ class Vote:
 
 class Timer:
     COUNTDOWN: Final = "{bar}  {seconds} с"
-    SPENT: Final = "Время хода: {seconds} с"
+    SPENT: Final = "Ход занял {seconds} с"
     EXPIRED: Final = "Время вышло"
 
 
@@ -280,28 +274,26 @@ class Buttons:
     CHANGE_CATEGORIES: Final = "Категории"
     PLAY: Final = "Начать партию"
     RESTART: Final = "Собрать заново"
+    NEXT_PLAYER: Final = "Следующий игрок"
 
     JOIN_LOBBY: Final = "Я в игре"
     LEAVE_LOBBY: Final = "Выйти из состава"
     SPIES_COUNT: Final = "Шпионов: {count}"
     TURN_LIMIT: Final = "Ход: {seconds} с"
     TURN_OFF: Final = "Ход: без таймера"
-    RULESET: Final = "Режим: {name}"
+    RULESET: Final = "Режим победы: {name}"
     RULES: Final = "Правила"
 
     SHOW_CARD: Final = "Посмотреть карточку"
-    NEXT_PLAYER: Final = "Дальше"
     START_DISCUSSION: Final = "Перейти к обсуждению"
 
-    NEXT_SPEAKER: Final = "Следующий игрок"
     ANOTHER_ROUND: Final = "Ещё круг"
-    SHOW_SPIES: Final = "Раскрыть карты"
+    SHOW_SPIES: Final = "Закончить и раскрыть карты"
     GO_TO_VOTE: Final = "Голосовать"
     BACK_TO_TALK: Final = "Вернуться к обсуждению"
     CONTINUE_TALK: Final = "Продолжить обсуждение"
     SHOW_RESULT: Final = "Итог партии"
     PLAY_AGAIN: Final = "Ещё партия"
-    NEW_GAME: Final = "Новый состав"
 
     HALL_OF_FAME: Final = "Зал славы"
     MY_STATS: Final = "Моя статистика"
@@ -363,75 +355,3 @@ MINUTES_IN_HOUR: Final = 60
 BAR_CELLS: Final = 10
 BAR_FULL: Final = "█"
 BAR_EMPTY: Final = "░"
-
-
-VOTE_REFUSALS: Final[Mapping[Refusal, str]] = {
-    Refusal.NOT_A_VOTER: Vote.NOT_A_VOTER,
-    Refusal.IS_OUT: Vote.IS_OUT,
-    Refusal.ALREADY_VOTED: Vote.ALREADY_VOTED,
-    Refusal.UNKNOWN_OPTION: Errors.STALE_TURN,
-}
-
-WIN_CAPTIONS: Final[Mapping[Winner, str]] = {
-    Winner.CIVILIANS: Cards.WIN_CIVILIANS,
-    Winner.SPIES: Cards.WIN_SPIES,
-}
-
-WIN_LINES: Final[Mapping[Winner, str]] = {
-    Winner.CIVILIANS: Vote.CIVILIANS_WIN,
-    Winner.SPIES: Vote.SPIES_WIN,
-}
-
-RULESET_NAMES: Final[Mapping[Ruleset, str]] = {
-    Ruleset.CLASSIC: "классика",
-    Ruleset.SUDDEN_DEATH: "навылет",
-}
-
-RULESET_LINES: Final[Mapping[Ruleset, str]] = {
-    Ruleset.CLASSIC: Lobby.RULESET_CLASSIC,
-    Ruleset.SUDDEN_DEATH: Lobby.RULESET_SUDDEN_DEATH,
-}
-
-
-def win_line(winner: Winner, *, misfire: bool = False) -> str:
-    if winner is Winner.SPIES and misfire:
-        return Vote.SPIES_WIN_MISFIRE
-    return WIN_LINES[winner]
-
-
-def empty_catalog_text(category_ids: Sequence[int]) -> str:
-    return Errors.EMPTY_CATEGORIES if category_ids else Errors.EMPTY_CATALOG
-
-
-def chosen_categories_text(titles: Iterable[str]) -> str:
-    return ", ".join(titles) or Setup.ALL_CATEGORIES
-
-
-def plural(count: int, forms: tuple[str, str, str]) -> str:
-    if 11 <= count % 100 <= 14:
-        return forms[2]
-    match count % 10:
-        case 1:
-            return forms[0]
-        case 2 | 3 | 4:
-            return forms[1]
-        case _:
-            return forms[2]
-
-
-def duration_text(spent: timedelta) -> str:
-    minutes = int(spent.total_seconds()) // 60
-    if minutes < 1:
-        return Cards.SUMMARY_SHORT_GAME
-
-    hours, rest = divmod(minutes, MINUTES_IN_HOUR)
-    if not hours:
-        return Cards.SUMMARY_MINUTES.format(minutes=minutes)
-    return Cards.SUMMARY_HOURS.format(hours=hours, minutes=rest)
-
-
-def countdown_line(seconds_left: int, total: int) -> str:
-    filled = round(BAR_CELLS * seconds_left / total) if total > 0 else 0
-    return Timer.COUNTDOWN.format(
-        bar=BAR_FULL * filled + BAR_EMPTY * (BAR_CELLS - filled), seconds=seconds_left
-    )

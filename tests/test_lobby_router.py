@@ -13,18 +13,20 @@ from fake_games import FakeGameStateRepository
 from fake_lobbies import FakeLobbyRepository
 from fake_words import FakeWords, catalog, pizza
 from lobby_harness import Group
-from undercover.bot.routers.discussion import TurnFlow, start_discussion
-from undercover.bot.routers.lobby import create_lobby_router
+from undercover.bot.callbacks import LobbyAction
+from undercover.bot.phases import TurnFlow
+from undercover.bot.routers.discussion import start_discussion
+from undercover.bot.routers.lobby import LOBBY_MUTATORS, create_lobby_router
 from undercover.bot.routers.voting import start_voting
 from undercover.bot.turn_clock import KeyedLocks, TurnClock, TurnKeeper
 from undercover.game.models import (
     DEFAULT_TURN_SECONDS,
-    GameMode,
     GameSessionState,
     GameStatus,
     LobbyView,
     PlayerState,
     Ruleset,
+    Seating,
 )
 from undercover.texts import RULESET_NAMES, Buttons, Errors, Lobby, Rules
 
@@ -201,10 +203,10 @@ async def test_the_spies_button_walks_the_allowed_range_and_wraps(group: Group) 
     await joined(group, *range(100, 106))
 
     await group.press(Buttons.SPIES_COUNT.format(count=1))
-    assert group.lobbies.stored.spies_count == 2
+    assert group.lobbies.stored.settings.spies_count == 2
 
     await group.press(Buttons.SPIES_COUNT.format(count=2))
-    assert group.lobbies.stored.spies_count == 1
+    assert group.lobbies.stored.settings.spies_count == 1
 
 
 async def test_only_the_host_changes_the_settings(group: Group) -> None:
@@ -212,7 +214,7 @@ async def test_only_the_host_changes_the_settings(group: Group) -> None:
 
     await group.press(Buttons.SPIES_COUNT.format(count=1), user_id=GUEST_ID)
 
-    assert group.lobbies.stored.spies_count == 1
+    assert group.lobbies.stored.settings.spies_count == 1
     assert Errors.NOT_HOST in group.alerts
 
 
@@ -224,10 +226,10 @@ async def test_categories_open_toggle_and_close(group: Group) -> None:
     assert opened is LobbyView.CATEGORIES
 
     await group.press(Lobby.CATEGORY_FREE.format(title="Еда"))
-    assert group.lobbies.stored.category_ids == [1]
+    assert group.lobbies.stored.settings.category_ids == [1]
 
     await group.press(Lobby.CATEGORY_CHOSEN.format(title="Еда"))
-    assert group.lobbies.stored.category_ids == []
+    assert group.lobbies.stored.settings.category_ids == []
 
     await group.press(Buttons.CATEGORIES_DONE)
     closed: LobbyView = group.lobbies.stored.view
@@ -241,7 +243,7 @@ async def test_a_category_button_from_a_stranger_changes_nothing(group: Group) -
 
     await group.tap(data, user_id=GUEST_ID)
 
-    assert group.lobbies.stored.category_ids == []
+    assert group.lobbies.stored.settings.category_ids == []
     assert Errors.NOT_HOST in group.alerts
 
 
@@ -251,7 +253,7 @@ async def test_a_started_game_hands_out_roles_and_opens_the_first_turn(group: Gr
     await group.press(Buttons.PLAY)
 
     state = group.games.stored
-    assert state.mode is GameMode.GROUP
+    assert state.seating is Seating.GROUP
     assert sorted(player.user_id or 0 for player in state.players) == [
         GUEST_ID,
         OTHER_ID,
@@ -325,7 +327,16 @@ async def test_a_host_who_never_joined_cannot_start_the_game(group: Group) -> No
 
     assert group.games.is_empty
     assert len(group.lobbies.stored.players) == 2, "состав не разбирается"
-    assert group.alerts, "ведущему объясняют, что сначала надо сесть за стол"
+    assert Lobby.HOST_MUST_PLAY in group.alerts
+
+
+async def test_a_table_of_one_cannot_start_the_game(group: Group) -> None:
+    await seated(group)
+
+    await group.press(Buttons.PLAY)
+
+    assert group.games.is_empty
+    assert Lobby.TOO_FEW in group.alerts
 
 
 async def test_only_the_host_starts_the_game(group: Group) -> None:
@@ -367,7 +378,7 @@ async def test_the_chosen_turn_length_reaches_the_session(group: Group) -> None:
     await seated(group, GUEST_ID, OTHER_ID)
 
     await group.press(Buttons.TURN_LIMIT.format(seconds=DEFAULT_TURN_SECONDS))
-    chosen = group.lobbies.stored.turn_seconds
+    chosen = group.lobbies.stored.settings.turn_seconds
     assert chosen != DEFAULT_TURN_SECONDS
 
     await group.press(Buttons.PLAY)
@@ -380,7 +391,7 @@ async def test_only_the_host_changes_the_turn_length(group: Group) -> None:
 
     await group.press(Buttons.TURN_LIMIT.format(seconds=DEFAULT_TURN_SECONDS), user_id=GUEST_ID)
 
-    assert group.lobbies.stored.turn_seconds == DEFAULT_TURN_SECONDS
+    assert group.lobbies.stored.settings.turn_seconds == DEFAULT_TURN_SECONDS
     assert Errors.NOT_HOST in group.alerts
 
 
@@ -393,7 +404,7 @@ async def test_the_ruleset_button_switches_the_mode_there_and_back(group: Group)
     seen = []
     for chosen in (Ruleset.CLASSIC, Ruleset.SUDDEN_DEATH):
         await group.press(ruleset_button(chosen))
-        seen.append(group.lobbies.stored.ruleset)
+        seen.append(group.lobbies.stored.settings.ruleset)
 
     assert seen == [Ruleset.SUDDEN_DEATH, Ruleset.CLASSIC]
 
@@ -403,7 +414,7 @@ async def test_only_the_host_switches_the_ruleset(group: Group) -> None:
 
     await group.press(ruleset_button(Ruleset.CLASSIC), user_id=GUEST_ID)
 
-    assert group.lobbies.stored.ruleset is Ruleset.CLASSIC
+    assert group.lobbies.stored.settings.ruleset is Ruleset.CLASSIC
     assert Errors.NOT_HOST in group.alerts
 
 
@@ -445,3 +456,14 @@ async def test_the_rules_button_works_for_someone_outside_the_roster(group: Grou
 
     assert [player.user_id for player in group.lobbies.stored.players] == [GUEST_ID]
     assert Rules.FULL in replies(group)
+
+
+def test_every_settings_action_has_a_mutator() -> None:
+    assert set(LOBBY_MUTATORS) == {
+        LobbyAction.SPIES,
+        LobbyAction.TURN,
+        LobbyAction.RULESET,
+        LobbyAction.CATEGORIES,
+        LobbyAction.CATEGORY,
+        LobbyAction.DONE,
+    }

@@ -9,7 +9,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from fake_bot import CHAT_ID, FIRST_MESSAGE_ID, HOST_ID, FakeSession, make_bot
 from undercover.bot.turn_clock import Turn, TurnClock, TurnView, timed_caption
-from undercover.game.models import GameMode, GameSessionState, GameStatus, PlayerState
+from undercover.game.models import GameSessionState, GameStatus, PlayerState, Seating
 from undercover.texts import countdown_line
 
 SESSION_ID: Final = "11111111-1111-1111-1111-111111111111"
@@ -27,7 +27,7 @@ def make_state(seconds: float = 0.3, turn_seconds: int = 30) -> GameSessionState
         session_id=SESSION_ID,
         chat_id=CHAT_ID,
         host_user_id=HOST_ID,
-        mode=GameMode.GROUP,
+        seating=Seating.GROUP,
         status=GameStatus.DISCUSSION,
         players=[PlayerState(order_index=0, name="Аня", is_spy=True)],
         word_id=1,

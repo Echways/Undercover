@@ -3,18 +3,18 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
 
-from undercover.game.engine import GameRulesError
 from undercover.game.models import (
     Ballot,
     Direction,
     DirectionBallot,
     EliminationBallot,
-    GameMode,
     GameSessionState,
     PlayerState,
     Ruleset,
+    Seating,
     Winner,
 )
+from undercover.game.rules import GameRulesError, Rule
 
 FIRST_OUT: Final = 1
 
@@ -38,7 +38,7 @@ def alive(state: GameSessionState) -> list[PlayerState]:
 
 
 def electorate(state: GameSessionState) -> list[int]:
-    if state.mode is not GameMode.GROUP:
+    if state.seating is not Seating.GROUP:
         return [state.host_user_id]
     return [player.user_id for player in alive(state) if player.user_id is not None]
 
@@ -118,7 +118,7 @@ def eliminate(state: GameSessionState, order_index: int) -> PlayerState:
         None,
     )
     if player is None:
-        raise GameRulesError(f"игрока {order_index} нет среди живых")
+        raise GameRulesError(Rule.NOT_ALIVE)
 
     player.is_out = True
     player.out_order = sum(candidate.is_out for candidate in state.players)

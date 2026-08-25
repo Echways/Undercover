@@ -1,4 +1,3 @@
-import logging
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from time import monotonic
@@ -7,9 +6,11 @@ from typing import Any, Final
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, TelegramObject, User
 
+from undercover.bot.acks import ack
+from undercover.log import get_logger
 from undercover.texts import Errors
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 DEFAULT_INTERVAL: Final = 0.5
 
@@ -34,9 +35,9 @@ class ThrottlingMiddleware(BaseMiddleware):
         if user is None or self._allow(user.id):
             return await handler(event, data)
 
-        logger.debug("пользователь %s превысил темп, апдейт отброшен", user.id)
+        logger.debug("update.throttled", user_id=user.id)
         if isinstance(event, CallbackQuery):
-            await event.answer(Errors.TOO_FAST)
+            await ack(event, Errors.TOO_FAST)
         return None
 
     def _allow(self, user_id: int) -> bool:

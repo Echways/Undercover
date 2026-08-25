@@ -1,6 +1,7 @@
 from aiogram.types import CallbackQuery
 
-from undercover.game.models import GameMode, GameSessionState, GameStatus
+from undercover.bot.acks import ack
+from undercover.game.models import GameSessionState, GameStatus, Seating, speaker_at
 from undercover.redis.game_state import GameStateRepository
 from undercover.texts import Discussion, Errors, Vote
 
@@ -8,7 +9,7 @@ from undercover.texts import Discussion, Errors, Vote
 def may_act(state: GameSessionState, user_id: int) -> bool:
     if user_id == state.host_user_id:
         return True
-    if state.mode is not GameMode.GROUP:
+    if state.seating is not Seating.GROUP:
         return False
     return _is_voter(state, user_id) or _current_speaker_id(state) == user_id
 
@@ -23,13 +24,13 @@ async def load_game_in_phase(
 ) -> GameSessionState | None:
     state = await games.load(session_id)
     if state is None:
-        await callback.answer(Errors.SESSION_NOT_FOUND, show_alert=True)
+        await ack(callback, Errors.SESSION_NOT_FOUND, show_alert=True)
         return None
     if state.status is not expected:
-        await callback.answer(wrong_phase, show_alert=True)
+        await ack(callback, wrong_phase, show_alert=True)
         return None
     if not may_act(state, callback.from_user.id):
-        await callback.answer(denied, show_alert=True)
+        await ack(callback, denied, show_alert=True)
         return None
     return state
 
@@ -66,7 +67,7 @@ async def load_voting(
 async def deny_non_host(callback: CallbackQuery, state: GameSessionState) -> bool:
     if callback.from_user.id == state.host_user_id:
         return False
-    await callback.answer(Errors.NOT_HOST, show_alert=True)
+    await ack(callback, Errors.NOT_HOST, show_alert=True)
     return True
 
 
@@ -77,9 +78,5 @@ def _is_voter(state: GameSessionState, user_id: int) -> bool:
 def _current_speaker_id(state: GameSessionState) -> int | None:
     if state.status is not GameStatus.DISCUSSION:
         return None
-    if not 0 <= state.discussion_cursor < len(state.discussion_order):
-        return None
-    order_index = state.discussion_order[state.discussion_cursor]
-    if not 0 <= order_index < len(state.players):
-        return None
-    return state.players[order_index].user_id
+    player = speaker_at(state, state.discussion_cursor)
+    return None if player is None else player.user_id

@@ -6,7 +6,7 @@ from aiogram.methods import SendPhoto
 from fake_bot import CHAT_ID, HOST_ID, FakeSession, make_bot
 from fake_words import WORD
 from undercover.bot.role_delivery import deliver_roles, render_role_card
-from undercover.game.models import GameMode, GameSessionState, GameStatus, PlayerState
+from undercover.game.models import GameSessionState, GameStatus, PlayerState, Seating
 from undercover.texts import Delivery
 
 SESSION_ID: Final = "11111111-1111-1111-1111-111111111111"
@@ -18,7 +18,7 @@ def make_state(ids: tuple[int | None, ...] = (10, 20, 30)) -> GameSessionState:
         session_id=SESSION_ID,
         chat_id=CHAT_ID,
         host_user_id=HOST_ID,
-        mode=GameMode.GROUP,
+        seating=Seating.GROUP,
         status=GameStatus.SETUP,
         players=[
             PlayerState(order_index=index, name=f"Игрок-{index}", is_spy=index == 1, user_id=user)

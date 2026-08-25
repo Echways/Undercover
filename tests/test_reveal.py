@@ -8,12 +8,8 @@ from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, Update
 
 from fake_bot import CHAT_ID, HOST_ID, SENT_MESSAGE_ID, FakeSession, callback_update, make_bot
 from fake_games import FakeGameStateRepository
-from undercover.bot.routers.reveal import (
-    RevealAction,
-    RevealCB,
-    create_reveal_router,
-    start_reveal,
-)
+from undercover.bot.callbacks import RevealAction, RevealCB
+from undercover.bot.routers.reveal import create_reveal_router, start_reveal
 from undercover.game.models import GameSessionState, GameStatus, PlayerState
 from undercover.media.card_renderer import (
     render_civilian_card,

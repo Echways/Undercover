@@ -1,9 +1,39 @@
 from collections.abc import Hashable
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Annotated, Final, Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from undercover.game.settings import (
+    DEFAULT_TURN_SECONDS,
+    TURN_CHOICES,
+    GameSettings,
+    Ruleset,
+)
+
+__all__ = [
+    "DEFAULT_TURN_SECONDS",
+    "TURN_CHOICES",
+    "AnyBallot",
+    "Ballot",
+    "Direction",
+    "DirectionBallot",
+    "EliminationBallot",
+    "GameSessionState",
+    "GameSettings",
+    "GameStatus",
+    "LobbyPlayer",
+    "LobbyState",
+    "LobbyView",
+    "PlayerState",
+    "Role",
+    "Ruleset",
+    "Seating",
+    "Winner",
+    "WordWithHints",
+    "speaker_at",
+]
 
 
 class Role(StrEnum):
@@ -11,14 +41,9 @@ class Role(StrEnum):
     SPY = "spy"
 
 
-class GameMode(StrEnum):
+class Seating(StrEnum):
     HOT_SEAT = "hot_seat"
     GROUP = "group"
-
-
-class Ruleset(StrEnum):
-    CLASSIC = "classic"
-    SUDDEN_DEATH = "sudden_death"
 
 
 class PlayerState(BaseModel):
@@ -84,7 +109,7 @@ class GameSessionState(BaseModel):
     session_id: str
     chat_id: int
     host_user_id: int
-    mode: GameMode = GameMode.HOT_SEAT
+    seating: Seating = Seating.HOT_SEAT
     ruleset: Ruleset = Ruleset.CLASSIC
     status: GameStatus
     players: list[PlayerState]
@@ -110,11 +135,6 @@ class GameSessionState(BaseModel):
     finished_at: datetime | None = None
 
 
-DEFAULT_TURN_SECONDS: Final = 45
-
-TURN_CHOICES: Final = (30, 45, 60, 0)
-
-
 class LobbyView(StrEnum):
     ROSTER = "roster"
     CATEGORIES = "categories"
@@ -131,10 +151,7 @@ class LobbyState(BaseModel):
     message_id: int | None = None
 
     players: list[LobbyPlayer] = Field(default_factory=list)
-    spies_count: int = Field(default=1, ge=1)
-    category_ids: list[int] = Field(default_factory=list)
-    turn_seconds: int = Field(default=DEFAULT_TURN_SECONDS, ge=0)
-    ruleset: Ruleset = Ruleset.CLASSIC
+    settings: GameSettings = Field(default_factory=GameSettings)
 
     view: LobbyView = LobbyView.ROSTER
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -144,3 +161,12 @@ class LobbyState(BaseModel):
             (index for index, player in enumerate(self.players) if player.user_id == user_id),
             None,
         )
+
+
+def speaker_at(state: GameSessionState, cursor: int) -> PlayerState | None:
+    if not 0 <= cursor < len(state.discussion_order):
+        return None
+    order_index = state.discussion_order[cursor]
+    if not 0 <= order_index < len(state.players):
+        return None
+    return state.players[order_index]

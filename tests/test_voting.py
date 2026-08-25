@@ -276,7 +276,7 @@ async def test_voting_buttons_are_dead_once_the_game_is_over(table: Table) -> No
 
 async def speak_out_the_round(table: Table) -> None:
     for _ in range(len(table.games.stored.discussion_order) - 1):
-        await table.press(Buttons.NEXT_SPEAKER)
+        await table.press(Buttons.NEXT_PLAYER)
 
 
 async def test_a_whole_game_runs_from_the_first_round_to_a_victory(table: Table) -> None:

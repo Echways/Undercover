@@ -1,8 +1,7 @@
 from typing import Final
 
+from undercover.bot.callbacks import StatsAction, StatsCB
 from undercover.bot.stats_view import (
-    StatsAction,
-    StatsCB,
     hall_of_fame_keyboard,
     hall_of_fame_text,
     private_text,

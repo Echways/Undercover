@@ -24,10 +24,10 @@ from undercover.game.engine import (
     pick_word,
 )
 from undercover.game.models import (
-    GameMode,
     GameSessionState,
     GameStatus,
     PlayerState,
+    Seating,
     WordWithHints,
 )
 
@@ -481,16 +481,16 @@ def test_a_short_list_of_ids_is_a_rules_error() -> None:
 
 
 async def test_create_session_carries_mode_and_ids_through() -> None:
-    state = await make_session(players_count=2, player_ids=[10, 20], mode=GameMode.GROUP)
+    state = await make_session(players_count=2, player_ids=[10, 20], seating=Seating.GROUP)
 
-    assert state.mode is GameMode.GROUP
+    assert state.seating is Seating.GROUP
     assert [player.user_id for player in state.players] == [10, 20]
 
 
 async def test_a_session_is_hot_seat_and_anonymous_by_default() -> None:
     state = await make_session(players_count=2)
 
-    assert state.mode is GameMode.HOT_SEAT
+    assert state.seating is Seating.HOT_SEAT
     assert [player.user_id for player in state.players] == [None, None]
 
 

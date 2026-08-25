@@ -1,21 +1,17 @@
-import re
-from typing import Final
-
 from aiogram import Bot, F, Router
 from aiogram.filters import CommandObject, CommandStart
 from aiogram.types import Message
 from aiogram_dialog import DialogManager, StartMode
 
+from undercover.bot.deep_links import JOIN_PAYLOAD, RULES_PAYLOAD
 from undercover.bot.filters import IN_GROUP
-from undercover.bot.lobby_view import JOIN_PAYLOAD_PREFIX, RULES_PAYLOAD, render_lobby
-from undercover.bot.routers.setup_draft import Setup
+from undercover.bot.lobby_view import render_lobby
+from undercover.bot.setup_states import Setup
 from undercover.game.catalog import CachedCatalog
-from undercover.game.engine import GameRulesError
 from undercover.game.lobby import seat
+from undercover.game.rules import GameRulesError
 from undercover.redis.lobby_state import LobbyRepository
-from undercover.texts import Errors, Lobby, Rules, Start
-
-JOIN_PAYLOAD: Final = re.compile(rf"^{JOIN_PAYLOAD_PREFIX}(-?\d+)$")
+from undercover.texts import RULE_REFUSALS, Errors, Lobby, Rules, Start
 
 
 def create_start_router(catalog: CachedCatalog) -> Router:
@@ -47,7 +43,7 @@ def create_start_router(catalog: CachedCatalog) -> Router:
         try:
             seat(lobby, message.from_user.id, message.from_user.full_name)
         except GameRulesError as error:
-            await message.answer(str(error))
+            await message.answer(RULE_REFUSALS[error.rule])
             return
 
         await message.answer(Lobby.DM_WELCOME)

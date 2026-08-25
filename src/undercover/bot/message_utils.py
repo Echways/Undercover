@@ -1,4 +1,3 @@
-import logging
 from typing import Final
 
 from aiogram import Bot
@@ -11,7 +10,9 @@ from aiogram.types import (
     Message,
 )
 
-logger = logging.getLogger(__name__)
+from undercover.log import get_logger
+
+logger = get_logger(__name__)
 
 Photo = InputFile | str
 
@@ -37,11 +38,11 @@ async def show_or_advance_card(
             reply_markup=keyboard,
         )
     except TelegramBadRequest as error:
-        logger.info("правка сообщения %s не удалась (%s), шлём новое", message_id, error)
+        logger.info("message.edit_failed", message_id=message_id, reason=str(error))
     else:
         if isinstance(edited, Message):
             return edited
-        logger.warning("edit_message_media вернул %r вместо сообщения", edited)
+        logger.warning("message.edit_returned_flag", result=repr(edited))
 
     await _delete_quietly(bot, chat_id, message_id)
     return await _send_card(bot, chat_id, photo, caption, keyboard)
@@ -62,7 +63,7 @@ async def show_or_resend_text(
         except TelegramBadRequest as error:
             if NOT_MODIFIED in str(error):
                 return message_id
-            logger.info("правка текста %s не удалась (%s), шлём новое", message_id, error)
+            logger.info("message.text_edit_failed", message_id=message_id, reason=str(error))
         else:
             return message_id
 
@@ -94,4 +95,4 @@ async def _delete_quietly(bot: Bot, chat_id: int, message_id: int) -> None:
     try:
         await bot.delete_message(chat_id, message_id)
     except TelegramBadRequest as error:
-        logger.info("удалить сообщение %s не удалось (%s)", message_id, error)
+        logger.info("message.delete_failed", message_id=message_id, reason=str(error))

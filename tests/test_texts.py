@@ -6,15 +6,22 @@ from pathlib import Path
 import pytest
 
 import undercover.bot
+import undercover.game
 import undercover.media
 from undercover import texts
 from undercover.game.models import Ruleset, Winner
+from undercover.game.rules import Rule
 from undercover.game.voting import Refusal
+from undercover.texts import Buttons, ruleset_label, spies_label, turn_label
 
 BOT_PACKAGE = Path(undercover.bot.__file__).parent
+GAME_PACKAGE = Path(undercover.game.__file__).parent
 MEDIA_PACKAGE = Path(undercover.media.__file__).parent
 
 RUSSIAN = re.compile(r"[А-Яа-яЁё]")
+
+# `Format("{spies_label}")` — не текст, а ссылка на готовый ярлык из геттера.
+PLACEHOLDER_ONLY = re.compile(r"^\{[^{}]+\}$")
 
 ARROWS = "\u2190-\u21ff"
 GEOMETRIC_SHAPES = "\u25a0-\u25ff"
@@ -80,7 +87,8 @@ def literals_shown_to_players(source: str) -> list[str]:
         arguments = [*call.args, *(keyword.value for keyword in call.keywords)]
         for argument in arguments:
             if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
-                if argument.value.strip():
+                value = argument.value.strip()
+                if value and not PLACEHOLDER_ONLY.match(value):
                     found.append(argument.value)
             elif isinstance(argument, ast.JoinedStr):
                 found.append(ast.unparse(argument))
@@ -199,6 +207,44 @@ def test_every_refusal_has_something_to_say() -> None:
         assert texts.VOTE_REFUSALS[refusal].strip()
 
 
+def test_every_broken_rule_has_something_to_say() -> None:
+    for rule in Rule:
+        assert texts.RULE_REFUSALS[rule].strip()
+
+
+def rules_refused_with_a_phrase(source: str) -> list[str]:
+    found: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Raise) or not isinstance(node.exc, ast.Call):
+            continue
+        if called_name(node.exc) != "GameRulesError":
+            continue
+        found.extend(
+            ast.unparse(argument)
+            for argument in node.exc.args
+            if not (
+                isinstance(argument, ast.Attribute)
+                and isinstance(argument.value, ast.Name)
+                and argument.value.id == "Rule"
+            )
+        )
+    return found
+
+
+@pytest.mark.parametrize("module", sorted(GAME_PACKAGE.glob("*.py")), ids=lambda path: path.name)
+def test_the_game_package_refuses_with_a_code_not_a_phrase(module: Path) -> None:
+    found = rules_refused_with_a_phrase(module.read_text(encoding="utf-8"))
+
+    assert found == [], f"{module.name}: фраза для игрока мимо texts — {found}"
+
+
+def test_the_guard_notices_a_phrase_that_slipped_back() -> None:
+    slipped = 'raise GameRulesError(f"в составе уже {MAX_PLAYERS} игроков")'
+
+    assert rules_refused_with_a_phrase(slipped) == ["f'в составе уже {MAX_PLAYERS} игроков'"]
+    assert rules_refused_with_a_phrase("raise GameRulesError(Rule.LOBBY_FULL)") == []
+
+
 def test_every_winner_has_a_caption_and_a_line() -> None:
     for winner in Winner:
         assert texts.WIN_CAPTIONS[winner].strip()
@@ -233,3 +279,31 @@ def test_the_duration_reads_in_minutes() -> None:
 def test_a_long_game_reads_in_hours() -> None:
     assert texts.duration_text(timedelta(minutes=60)) == "1 ч 00 мин"
     assert texts.duration_text(timedelta(minutes=125)) == "2 ч 05 мин"
+
+
+def test_facade_keeps_every_public_name_importable() -> None:
+    for name in (
+        "BRAND",
+        "Buttons",
+        "Cards",
+        "Errors",
+        "Lobby",
+        "RULESET_NAMES",
+        "VOTE_REFUSALS",
+        "chosen_categories_text",
+        "countdown_line",
+        "duration_text",
+        "plural",
+        "ruleset_label",
+        "spies_label",
+        "turn_label",
+        "win_line",
+    ):
+        assert hasattr(texts, name), name
+
+
+def test_button_labels_read_the_same_on_both_screens() -> None:
+    assert ruleset_label(Ruleset.CLASSIC) == Buttons.RULESET.format(name="классика")
+    assert turn_label(0) == Buttons.TURN_OFF
+    assert turn_label(45) == Buttons.TURN_LIMIT.format(seconds=45)
+    assert spies_label(2) == Buttons.SPIES_COUNT.format(count=2)

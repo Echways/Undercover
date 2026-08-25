@@ -14,8 +14,8 @@ from discussion_harness import (
 )
 from fake_bot import CHAT_ID
 from fake_words import WORD, pizza
-from undercover.bot.routers.finale import FinalAction, FinalCB
-from undercover.game.models import GameMode, GameStatus, Ruleset, Winner
+from undercover.bot.callbacks import FinalAction, FinalCB
+from undercover.game.models import GameStatus, Ruleset, Seating, Winner
 from undercover.texts import Buttons, Discussion, Errors, Lobby, Vote
 from undercover.texts import Setup as SetupTexts
 
@@ -73,14 +73,14 @@ async def test_a_broken_journal_does_not_break_the_final_screen(table: Table) ->
     await talking(table)
     await table.press(Buttons.SHOW_SPIES)
 
-    assert table.card.texts == (Buttons.PLAY_AGAIN, Buttons.NEW_GAME)
+    assert table.card.texts == (Buttons.PLAY_AGAIN, Buttons.RESTART)
     assert table.games.stored.status is GameStatus.FINISHED
     assert table.alerts[-1] is None
 
 
 async def test_discussion_buttons_are_dead_after_the_game_is_over(table: Table) -> None:
     await talking(table)
-    stale = table.card.callback_data(Buttons.NEXT_SPEAKER)
+    stale = table.card.callback_data(Buttons.NEXT_PLAYER)
     await table.press(Buttons.SHOW_SPIES)
 
     await table.tap(stale)
@@ -204,7 +204,7 @@ async def test_play_again_without_a_word_keeps_the_finished_game(table: Table) -
 async def test_new_game_wipes_the_session_and_opens_the_setup(table: Table) -> None:
     old = await finished(table)
 
-    await table.press(Buttons.NEW_GAME)
+    await table.press(Buttons.RESTART)
 
     assert await table.games.load(old.session_id) is None
     assert SetupTexts.ASK_PLAYERS_COUNT in (table.window.text or "")
@@ -212,10 +212,9 @@ async def test_new_game_wipes_the_session_and_opens_the_setup(table: Table) -> N
 
 async def test_new_game_asks_for_the_roster_from_scratch(table: Table) -> None:
     await finished(table)
-    await table.press(Buttons.NEW_GAME)
+    await table.press(Buttons.RESTART)
 
     await table.send("2")
-    await table.send("1")
     await table.send("Зина")
     await table.send("Игорь")
     await table.click(Buttons.PLAY)
@@ -224,7 +223,7 @@ async def test_new_game_asks_for_the_roster_from_scratch(table: Table) -> None:
 
 
 async def test_the_final_screen_silences_the_clock(table: Table) -> None:
-    await talking(table, mode=GameMode.GROUP, turn_seconds=60)
+    await talking(table, seating=Seating.GROUP, turn_seconds=60)
     assert table.keeper.clock.running
 
     await table.press(Buttons.SHOW_SPIES)
@@ -233,9 +232,9 @@ async def test_the_final_screen_silences_the_clock(table: Table) -> None:
 
 
 async def test_a_new_roster_silences_the_clock(table: Table) -> None:
-    await finished(table, mode=GameMode.GROUP, turn_seconds=60)
+    await finished(table, seating=Seating.GROUP, turn_seconds=60)
 
-    await table.press(Buttons.NEW_GAME)
+    await table.press(Buttons.RESTART)
 
     assert table.keeper.clock.running == frozenset()
 
@@ -243,14 +242,14 @@ async def test_a_new_roster_silences_the_clock(table: Table) -> None:
 async def test_another_group_game_deals_roles_in_private_and_opens_the_first_turn(
     table: Table,
 ) -> None:
-    old = await finished(table, mode=GameMode.GROUP, ids=(10, 20, 30, 40), turn_seconds=60)
+    old = await finished(table, seating=Seating.GROUP, ids=(10, 20, 30, 40), turn_seconds=60)
     sent_before = len(table.session.calls(SendPhoto))
 
     await table.press(Buttons.PLAY_AGAIN)
 
     fresh = table.games.stored
     assert fresh.session_id != old.session_id
-    assert fresh.mode is GameMode.GROUP
+    assert fresh.seating is Seating.GROUP
     assert fresh.turn_seconds == 60
     assert fresh.status is GameStatus.DISCUSSION
     assert [player.user_id for player in fresh.players] == [10, 20, 30, 40]
@@ -261,7 +260,7 @@ async def test_another_group_game_deals_roles_in_private_and_opens_the_first_tur
 
 
 async def test_an_undelivered_role_keeps_the_finished_group_game(table: Table) -> None:
-    old = await finished(table, mode=GameMode.GROUP, ids=(10, 20, 30, 40), turn_seconds=60)
+    old = await finished(table, seating=Seating.GROUP, ids=(10, 20, 30, 40), turn_seconds=60)
     table.session.failures[SendPhoto] = TelegramForbiddenError(
         method=SendPhoto(chat_id=10, photo="x"), message="bot was blocked by the user"
     )
@@ -273,7 +272,7 @@ async def test_an_undelivered_role_keeps_the_finished_group_game(table: Table) -
 
 
 async def test_only_the_host_uncovers_the_spies(table: Table) -> None:
-    state = await talking(table, ids=(11, 22, 33, 44), mode=GameMode.GROUP)
+    state = await talking(table, ids=(11, 22, 33, 44), seating=Seating.GROUP)
     silent = state.players[state.discussion_order[-1]]
     assert silent.user_id is not None
 
@@ -314,7 +313,7 @@ async def test_the_result_screen_still_offers_the_next_game(table: Table) -> Non
     await table.tap(FinalCB(action=FinalAction.RESULT, session_id=SESSION_ID).pack())
 
     assert Buttons.PLAY_AGAIN in table.card.texts
-    assert Buttons.NEW_GAME in table.card.texts
+    assert Buttons.RESTART in table.card.texts
 
 
 async def test_the_result_screen_is_dead_while_the_game_is_on(table: Table) -> None:

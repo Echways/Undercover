@@ -64,3 +64,11 @@ def test_only_the_expired_query_is_recognised() -> None:
     assert query_expired(EXPIRED) is True
     assert query_expired(SOMETHING_ELSE) is False
     assert query_expired(RuntimeError("что угодно")) is False
+
+
+async def test_ack_forwards_the_url_for_a_deep_link(bot: Bot, session: FakeSession) -> None:
+    answered = await ack(press(bot), url="https://t.me/bot?start=join_1")
+
+    assert answered is True
+    answers = session.calls(AnswerCallbackQuery)
+    assert [answer.url for answer in answers] == ["https://t.me/bot?start=join_1"]

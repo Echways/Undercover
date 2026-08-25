@@ -1,35 +1,23 @@
 import asyncio
-import logging
-from collections.abc import Awaitable, Callable
-from enum import StrEnum
 
 from aiogram import Bot, F, Router
-from aiogram.filters.callback_data import CallbackData
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 
+from undercover.bot.acks import ack
+from undercover.bot.callbacks import RevealAction, RevealCB
+from undercover.bot.cards import card_photo
 from undercover.bot.guards import load_game_in_phase
 from undercover.bot.keyboards import single_button
-from undercover.bot.message_utils import as_photo, photo_file_id, show_or_advance_card
+from undercover.bot.message_utils import photo_file_id, show_or_advance_card
+from undercover.bot.phases import PhaseStarter
 from undercover.bot.role_delivery import render_role_card
 from undercover.game.models import GameSessionState, GameStatus, PlayerState
-from undercover.media.card_renderer import CARD_SUFFIX, render_hidden_card
+from undercover.log import get_logger
+from undercover.media.card_renderer import render_hidden_card
 from undercover.redis.game_state import GameStateRepository
 from undercover.texts import Buttons, Errors, Reveal
 
-logger = logging.getLogger(__name__)
-
-PhaseStarter = Callable[[Bot, GameStateRepository, GameSessionState], Awaitable[None]]
-
-
-class RevealAction(StrEnum):
-    SHOW = "show"
-    NEXT = "next"
-
-
-class RevealCB(CallbackData, prefix="reveal"):
-    action: RevealAction
-    session_id: str
-    order_index: int
+logger = get_logger(__name__)
 
 
 def create_reveal_router(start_discussion: PhaseStarter) -> Router:
@@ -48,15 +36,15 @@ def create_reveal_router(start_discussion: PhaseStarter) -> Router:
         state, player = turn
 
         if player.has_viewed:
-            await callback.answer(Reveal.ALREADY_VIEWED, show_alert=True)
+            await ack(callback, Reveal.ALREADY_VIEWED, show_alert=True)
             return
         if player.is_spy and player.order_index not in state.hint_by_spy:
             logger.error(
-                "партия %s: шпиону %s не досталась подсказка",
-                state.session_id,
-                player.order_index,
+                "reveal.hint_missing",
+                session_id=state.session_id,
+                order_index=player.order_index,
             )
-            await callback.answer(Errors.BROKEN_SESSION, show_alert=True)
+            await ack(callback, Errors.BROKEN_SESSION, show_alert=True)
             return
 
         is_last = state.reveal_cursor == len(state.players) - 1
@@ -69,7 +57,7 @@ def create_reveal_router(start_discussion: PhaseStarter) -> Router:
             bot,
             state.chat_id,
             state.current_message_id,
-            as_photo(image, _card_filename(player.order_index)),
+            card_photo(image, f"card_{player.order_index}"),
             caption,
             _keyboard(
                 Buttons.START_DISCUSSION if is_last else Buttons.NEXT_PLAYER,
@@ -81,7 +69,7 @@ def create_reveal_router(start_discussion: PhaseStarter) -> Router:
         player.has_viewed = True
         state.current_message_id = message.message_id
         await games.save(state)
-        await callback.answer()
+        await ack(callback)
 
     @router.callback_query(RevealCB.filter(F.action == RevealAction.NEXT))
     async def cb_next_player(
@@ -96,7 +84,7 @@ def create_reveal_router(start_discussion: PhaseStarter) -> Router:
         state, player = turn
 
         if not player.has_viewed:
-            await callback.answer(Reveal.NOT_VIEWED_YET, show_alert=True)
+            await ack(callback, Reveal.NOT_VIEWED_YET, show_alert=True)
             return
 
         if state.reveal_cursor == len(state.players) - 1:
@@ -104,11 +92,11 @@ def create_reveal_router(start_discussion: PhaseStarter) -> Router:
             state.status = GameStatus.DISCUSSION
             await games.save(state)
             await start_discussion(bot, games, state)
-            await callback.answer()
+            await ack(callback)
             return
 
         await _show_hidden_card(bot, games, state, state.reveal_cursor + 1)
-        await callback.answer()
+        await ack(callback)
 
     return router
 
@@ -130,7 +118,7 @@ async def _show_hidden_card(
         bot,
         state.chat_id,
         state.current_message_id,
-        as_photo(image, _card_filename(order_index)),
+        card_photo(image, f"card_{order_index}"),
         Reveal.TURN_CAPTION.format(
             position=order_index + 1, total=len(state.players), name=player.name
         ),
@@ -153,23 +141,19 @@ async def _current_turn(
     if state is None:
         return None
     if callback_data.order_index != state.reveal_cursor:
-        await callback.answer(Errors.STALE_TURN, show_alert=True)
+        await ack(callback, Errors.STALE_TURN, show_alert=True)
         return None
     if not 0 <= state.reveal_cursor < len(state.players):
         logger.error(
-            "партия %s: курсор раздачи %s вне списка из %s игроков",
-            state.session_id,
-            state.reveal_cursor,
-            len(state.players),
+            "reveal.cursor_out_of_range",
+            session_id=state.session_id,
+            cursor=state.reveal_cursor,
+            players=len(state.players),
         )
-        await callback.answer(Errors.BROKEN_SESSION, show_alert=True)
+        await ack(callback, Errors.BROKEN_SESSION, show_alert=True)
         return None
 
     return state, state.players[state.reveal_cursor]
-
-
-def _card_filename(order_index: int) -> str:
-    return f"card_{order_index}.{CARD_SUFFIX}"
 
 
 def _keyboard(

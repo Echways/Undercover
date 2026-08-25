@@ -14,7 +14,7 @@ from fake_games import FakeGameStateRepository
 from fake_lobbies import FakeLobbyRepository
 from fake_words import FakeWords, catalog, pizza
 from undercover.bot.routers.reveal import start_reveal
-from undercover.bot.routers.setup_dialog import create_setup_dialog
+from undercover.bot.routers.setup import create_setup_dialog
 from undercover.bot.routers.start import create_start_router
 from undercover.game.models import LobbyState
 from undercover.texts import GAME_COMMAND, Errors, Lobby, Rules, Start
@@ -110,7 +110,7 @@ async def test_start_opens_the_setup_dialog(table: Table) -> None:
 async def test_start_restarts_a_setup_left_halfway(table: Table) -> None:
     await table.send("/start")
     await table.send(PLAYERS_COUNT)
-    assert SetupTexts.ASK_SPIES_COUNT.split("{")[0] in (table.screen.text or "")
+    assert SetupTexts.ASK_PLAYER_NAMES.split("{")[0] in (table.screen.text or "")
 
     await table.send("/start")
 

@@ -1,20 +1,9 @@
-from enum import StrEnum
-
-from aiogram.filters.callback_data import CallbackData
 from aiogram.types import InlineKeyboardMarkup
 
+from undercover.bot.callbacks import StatsAction, StatsCB
 from undercover.bot.keyboards import single_button
 from undercover.game.stats import Champion, ChatTotals, HallOfFame, PlayerProfile
 from undercover.texts import TIMES, Buttons, Stats, plural
-
-
-class StatsAction(StrEnum):
-    BOARD = "board"
-    ME = "me"
-
-
-class StatsCB(CallbackData, prefix="stats"):
-    action: StatsAction
 
 
 def hall_of_fame_text(hall: HallOfFame) -> str:

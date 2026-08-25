@@ -5,22 +5,45 @@ from typing import Final, Protocol
 from uuid import UUID
 
 from undercover.game.models import (
-    GameMode,
     GameSessionState,
     GameStatus,
     PlayerState,
     Ruleset,
+    Seating,
     WordWithHints,
 )
+from undercover.game.rules import GameRulesError, Rule
+from undercover.game.settings import max_spies_count
+
+__all__ = [
+    "MAX_NAME_LENGTH",
+    "MAX_PLAYERS",
+    "MIN_CATEGORIES_TO_CHOOSE",
+    "MIN_PLAYERS",
+    "Catalog",
+    "CatalogFactory",
+    "CategoryRecord",
+    "EmptyWordCatalogError",
+    "GameRulesError",
+    "HintRecord",
+    "Rule",
+    "WordRecord",
+    "WordsSource",
+    "WordsSourceFactory",
+    "assign_hints",
+    "assign_roles",
+    "build_discussion_order",
+    "create_session",
+    "max_spies_count",
+    "offers_a_choice",
+    "pick_word",
+    "secure_rng",
+]
 
 MIN_PLAYERS: Final = 2
 MAX_PLAYERS: Final = 16
 MAX_NAME_LENGTH: Final = 24
 MIN_CATEGORIES_TO_CHOOSE: Final = 2
-
-
-class GameRulesError(ValueError):
-    pass
 
 
 class EmptyWordCatalogError(RuntimeError):
@@ -71,10 +94,6 @@ def secure_rng() -> Random:
     return SystemRandom()
 
 
-def max_spies_count(players_count: int) -> int:
-    return max(1, players_count // 3)
-
-
 def assign_roles(
     player_names: Sequence[str],
     spies_count: int,
@@ -83,23 +102,17 @@ def assign_roles(
 ) -> list[PlayerState]:
     players_count = len(player_names)
     if not MIN_PLAYERS <= players_count <= MAX_PLAYERS:
-        raise GameRulesError(
-            f"игроков должно быть от {MIN_PLAYERS} до {MAX_PLAYERS}, а не {players_count}"
-        )
+        raise GameRulesError(Rule.ROSTER_SIZE)
 
     ids: tuple[int | None, ...] = (
         tuple(player_ids) if player_ids is not None else (None,) * players_count
     )
     if len(ids) != players_count:
-        raise GameRulesError(
-            f"идентификаторов {len(ids)}, а игроков {players_count} — состав не сходится"
-        )
+        raise GameRulesError(Rule.IDS_MISMATCH)
 
     limit = max_spies_count(players_count)
     if not 1 <= spies_count <= limit:
-        raise GameRulesError(
-            f"шпионов на {players_count} игроков должно быть от 1 до {limit}, а не {spies_count}"
-        )
+        raise GameRulesError(Rule.SPIES_COUNT)
 
     spies = set(rng.sample(range(players_count), spies_count))
     return [
@@ -115,7 +128,7 @@ def assign_roles(
 
 def build_discussion_order(players: Sequence[PlayerState], rng: Random) -> list[int]:
     if not players:
-        raise GameRulesError("обсуждать нечего: в партии нет игроков")
+        raise GameRulesError(Rule.NO_SPEAKERS)
 
     order = [player.order_index for player in players]
     rng.shuffle(order)
@@ -149,7 +162,7 @@ def assign_hints(
 ) -> dict[int, str]:
     spies = [player.order_index for player in players if player.is_spy]
     if not spies:
-        raise GameRulesError("в партии нет ни одного шпиона")
+        raise GameRulesError(Rule.NO_SPIES)
     if not word.hints:
         raise EmptyWordCatalogError(f"у слова «{word.text}» нет ни одной подсказки шпиону")
 
@@ -168,7 +181,7 @@ async def create_session(
     rng: Random,
     category_ids: Sequence[int] | None = None,
     player_ids: Sequence[int] | None = None,
-    mode: GameMode = GameMode.HOT_SEAT,
+    seating: Seating = Seating.HOT_SEAT,
     ruleset: Ruleset = Ruleset.CLASSIC,
     turn_seconds: int = 0,
 ) -> GameSessionState:
@@ -178,7 +191,7 @@ async def create_session(
         session_id=str(UUID(int=rng.getrandbits(128), version=4)),
         chat_id=chat_id,
         host_user_id=host_user_id,
-        mode=mode,
+        seating=seating,
         ruleset=ruleset,
         turn_seconds=turn_seconds,
         status=GameStatus.SETUP,

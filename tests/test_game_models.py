@@ -7,15 +7,16 @@ from undercover.game.models import (
     Direction,
     DirectionBallot,
     EliminationBallot,
-    GameMode,
     GameSessionState,
     GameStatus,
     LobbyPlayer,
     LobbyState,
     PlayerState,
     Role,
+    Seating,
     Winner,
     WordWithHints,
+    speaker_at,
 )
 
 
@@ -80,7 +81,7 @@ def test_old_sessions_without_the_new_fields_still_read_as_hot_seat() -> None:
 
     state = GameSessionState.model_validate_json(raw)
 
-    assert state.mode is GameMode.HOT_SEAT
+    assert state.seating is Seating.HOT_SEAT
     assert state.players[0].user_id is None
 
 
@@ -185,3 +186,30 @@ def test_a_fresh_player_is_not_in_the_elimination_queue() -> None:
 def test_the_elimination_place_starts_from_one() -> None:
     with pytest.raises(ValidationError):
         PlayerState(order_index=0, name="Аня", is_spy=False, out_order=0)
+
+
+def test_session_defaults_to_the_hot_seat_table() -> None:
+    state = make_session()
+
+    assert state.seating is Seating.HOT_SEAT
+
+
+def test_speaker_at_returns_the_player_the_cursor_points_to() -> None:
+    state = make_session(discussion_order=[1, 0])
+
+    found = speaker_at(state, 0)
+
+    assert found is not None
+    assert found.order_index == 1
+
+
+def test_speaker_at_refuses_a_cursor_outside_the_order() -> None:
+    state = make_session(discussion_order=[0])
+
+    assert speaker_at(state, 5) is None
+
+
+def test_speaker_at_refuses_an_order_pointing_outside_the_roster() -> None:
+    state = make_session(discussion_order=[99])
+
+    assert speaker_at(state, 0) is None

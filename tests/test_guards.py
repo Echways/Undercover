@@ -6,10 +6,10 @@ from fake_bot import CHAT_ID, HOST_ID
 from undercover.bot.guards import may_act
 from undercover.game.models import (
     EliminationBallot,
-    GameMode,
     GameSessionState,
     GameStatus,
     PlayerState,
+    Seating,
 )
 
 SESSION_ID: Final = "11111111-1111-1111-1111-111111111111"
@@ -19,7 +19,7 @@ BYSTANDER_ID: Final = 222
 
 
 def make_state(
-    mode: GameMode = GameMode.GROUP,
+    seating: Seating = Seating.GROUP,
     status: GameStatus = GameStatus.DISCUSSION,
     **overrides: object,
 ) -> GameSessionState:
@@ -27,7 +27,7 @@ def make_state(
         "session_id": SESSION_ID,
         "chat_id": CHAT_ID,
         "host_user_id": HOST_ID,
-        "mode": mode,
+        "seating": seating,
         "status": status,
         "players": [
             PlayerState(order_index=0, name="Аня", is_spy=True, user_id=SPEAKER_ID),
@@ -43,7 +43,7 @@ def make_state(
 
 def test_the_host_may_always_act() -> None:
     assert may_act(make_state(), HOST_ID)
-    assert may_act(make_state(GameMode.HOT_SEAT), HOST_ID)
+    assert may_act(make_state(Seating.HOT_SEAT), HOST_ID)
     assert may_act(make_state(status=GameStatus.FINISHED), HOST_ID)
 
 
@@ -61,7 +61,7 @@ def test_the_previous_speaker_loses_the_right_when_the_turn_moves_on() -> None:
 
 
 def test_hot_seat_leaves_every_button_to_the_host() -> None:
-    assert not may_act(make_state(GameMode.HOT_SEAT), SPEAKER_ID)
+    assert not may_act(make_state(Seating.HOT_SEAT), SPEAKER_ID)
 
 
 @pytest.mark.parametrize("status", [GameStatus.REVEAL, GameStatus.FINISHED, GameStatus.SETUP])
@@ -111,7 +111,7 @@ def test_a_closed_ballot_gives_the_voting_screen_back_to_the_host() -> None:
 
 
 def test_hot_seat_voting_stays_with_the_host() -> None:
-    state = make_state(GameMode.HOT_SEAT, status=GameStatus.VOTING, ballot=OPEN_BALLOT)
+    state = make_state(Seating.HOT_SEAT, status=GameStatus.VOTING, ballot=OPEN_BALLOT)
 
     assert not may_act(state, SPEAKER_ID)
     assert may_act(state, HOST_ID)

@@ -22,18 +22,15 @@ from aiogram_dialog.test_tools.memory_storage import JsonMemoryStorage
 from fake_bot import CHAT_ID, HOST_ID, FakeSession, callback_update, make_bot
 from fake_games import FakeGameStateRepository
 from fake_words import WORD, FakeWords, pizza
-from undercover.bot.routers.discussion import (
-    TurnFlow,
-    create_discussion_router,
-    start_discussion,
-)
+from undercover.bot.phases import TurnFlow
+from undercover.bot.routers.discussion import create_discussion_router, start_discussion
 from undercover.bot.routers.finale import create_finale_router
 from undercover.bot.routers.reveal import create_reveal_router, start_reveal
-from undercover.bot.routers.setup_dialog import create_setup_dialog
-from undercover.bot.routers.setup_draft import Setup
+from undercover.bot.routers.setup import create_setup_dialog
 from undercover.bot.routers.voting import create_voting_router, start_voting
+from undercover.bot.setup_states import Setup
 from undercover.bot.turn_clock import KeyedLocks, TurnClock, TurnKeeper
-from undercover.game.models import GameMode, GameSessionState, GameStatus, PlayerState
+from undercover.game.models import GameSessionState, GameStatus, PlayerState, Seating
 from undercover.texts import Buttons, Discussion, Vote
 
 SESSION_ID: Final = "11111111-1111-1111-1111-111111111111"
@@ -209,7 +206,9 @@ async def lay_table(words: FakeWords, log: RecordingLog, tick: timedelta) -> Asy
     dispatcher.include_router(create_reveal_router(begin_discussion))
     dispatcher.include_router(create_discussion_router(flow))
     dispatcher.include_router(create_voting_router(keeper, begin_discussion, log))
-    dispatcher.include_router(create_finale_router(words.open, log, keeper, begin_discussion))
+    dispatcher.include_router(
+        create_finale_router(words.open, log, keeper, begin_discussion, start_reveal)
+    )
     dispatcher.include_router(create_setup_dialog(words.cached(), start_reveal))
     messages = MockMessageManager()
     setup_dialogs(dispatcher, message_manager=messages)
@@ -258,7 +257,7 @@ async def finished(table: Table, **overrides: Any) -> GameSessionState:
 async def all_spoken(table: Table, **overrides: Any) -> GameSessionState:
     state = await talking(table, **overrides)
     for _ in range(len(state.discussion_order) - 1):
-        await table.press(Buttons.NEXT_SPEAKER)
+        await table.press(Buttons.NEXT_PLAYER)
     return table.games.stored
 
 
@@ -280,7 +279,7 @@ async def voting(table: Table, **overrides: Any) -> GameSessionState:
 
 
 async def group_voting(table: Table, ids: tuple[int, ...], **overrides: Any) -> GameSessionState:
-    return await voting(table, ids=ids, mode=GameMode.GROUP, **overrides)
+    return await voting(table, ids=ids, seating=Seating.GROUP, **overrides)
 
 
 def repainted(table: Table) -> EditMessageCaption:

@@ -7,8 +7,8 @@ from aiogram.methods import AnswerCallbackQuery, SendMessage
 
 from fake_bot import CHAT_ID, HOST_ID, FakeSession, callback_update, make_bot, message_update
 from fake_stats import FakeStats
+from undercover.bot.callbacks import StatsAction, StatsCB
 from undercover.bot.routers.stats import create_stats_router
-from undercover.bot.stats_view import StatsAction, StatsCB
 from undercover.game.stats import Champion, ChatTotals, HallOfFame, PlayerProfile
 from undercover.texts import STATS_COMMAND, Buttons, Stats
 

@@ -25,7 +25,7 @@ class Typeface:
     cap_ratio: float
 
 
-FONT_REGULAR: Final = Typeface(file="regular.ttf", cap_ratio=0.885)
+FONT_REGULAR: Final = Typeface(file="regular.otf", cap_ratio=0.885)
 FONT_BOLD: Final = Typeface(file="bold.otf", cap_ratio=0.625)
 
 SAFE_MARGIN: Final = 96

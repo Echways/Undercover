@@ -1,20 +1,16 @@
 from collections.abc import Iterable
 
-from undercover.game.engine import (
-    MAX_NAME_LENGTH,
-    MAX_PLAYERS,
-    MIN_PLAYERS,
-    GameRulesError,
-    max_spies_count,
-)
-from undercover.game.models import TURN_CHOICES, LobbyPlayer, LobbyState, Ruleset
+from undercover.game.engine import MAX_NAME_LENGTH, MAX_PLAYERS, MIN_PLAYERS
+from undercover.game.models import LobbyPlayer, LobbyState
+from undercover.game.rules import GameRulesError, Rule
+from undercover.game.settings import clamp_spies
 
 
 def join(lobby: LobbyState, player: LobbyPlayer) -> None:
     if lobby.index_of(player.user_id) is not None:
-        raise GameRulesError(f"{player.name} уже в составе")
+        raise GameRulesError(Rule.ALREADY_SEATED)
     if len(lobby.players) >= MAX_PLAYERS:
-        raise GameRulesError(f"в составе уже {MAX_PLAYERS} игроков — больше не поместится")
+        raise GameRulesError(Rule.LOBBY_FULL)
     lobby.players.append(player)
 
 
@@ -26,39 +22,17 @@ def seat(lobby: LobbyState, user_id: int, full_name: str) -> None:
 def leave(lobby: LobbyState, user_id: int) -> None:
     index = lobby.index_of(user_id)
     if index is None:
-        raise GameRulesError("этого игрока нет в составе")
+        raise GameRulesError(Rule.NOT_SEATED)
     del lobby.players[index]
-    _clamp_spies(lobby)
-
-
-def cycle_spies_count(lobby: LobbyState) -> None:
-    lobby.spies_count = lobby.spies_count % _spies_limit(lobby) + 1
-
-
-def cycle_turn_seconds(lobby: LobbyState) -> None:
-    position = (
-        TURN_CHOICES.index(lobby.turn_seconds) + 1 if lobby.turn_seconds in TURN_CHOICES else 0
-    )
-    lobby.turn_seconds = TURN_CHOICES[position % len(TURN_CHOICES)]
-
-
-def toggle_ruleset(lobby: LobbyState) -> None:
-    lobby.ruleset = Ruleset.SUDDEN_DEATH if lobby.ruleset is Ruleset.CLASSIC else Ruleset.CLASSIC
-
-
-def toggle_category(lobby: LobbyState, category_id: int) -> None:
-    if category_id in lobby.category_ids:
-        lobby.category_ids.remove(category_id)
-    else:
-        lobby.category_ids.append(category_id)
+    clamp_spies(lobby.settings, len(lobby.players))
 
 
 def ensure_playable(lobby: LobbyState) -> None:
     if len(lobby.players) < MIN_PLAYERS:
-        raise GameRulesError(f"для партии нужно хотя бы {MIN_PLAYERS} игрока")
+        raise GameRulesError(Rule.TOO_FEW_PLAYERS)
     if lobby.index_of(lobby.host_user_id) is None:
-        raise GameRulesError("ведущий играет со всеми — жмите «Я в игре», потом начинайте")
-    _clamp_spies(lobby)
+        raise GameRulesError(Rule.HOST_MUST_PLAY)
+    clamp_spies(lobby.settings, len(lobby.players))
 
 
 def unique_name(base: str, taken: Iterable[str]) -> str:
@@ -73,12 +47,4 @@ def unique_name(base: str, taken: Iterable[str]) -> str:
         if candidate not in reserved:
             return candidate
 
-    raise GameRulesError(f"не удалось развести имя «{base}»")
-
-
-def _spies_limit(lobby: LobbyState) -> int:
-    return max_spies_count(len(lobby.players)) if lobby.players else 1
-
-
-def _clamp_spies(lobby: LobbyState) -> None:
-    lobby.spies_count = min(lobby.spies_count, _spies_limit(lobby))
+    raise GameRulesError(Rule.NAME_CLASH)

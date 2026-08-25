@@ -1,4 +1,3 @@
-import logging
 from typing import Protocol
 
 from aiogram import Bot
@@ -6,9 +5,10 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InlineKeyboardMarkup
 
 from undercover.bot.message_utils import Photo, show_or_advance_card
-from undercover.game.models import GameMode, GameSessionState
+from undercover.game.models import GameSessionState, Seating
+from undercover.log import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PhaseBoard(Protocol):
@@ -89,8 +89,12 @@ class FeedBoard:
                 reply_markup=keyboard,
             )
         except TelegramBadRequest as error:
-            logger.info("ход %s не заморозился (%s)", state.current_message_id, error)
+            logger.info(
+                "board.freeze_failed",
+                message_id=state.current_message_id,
+                reason=str(error),
+            )
 
 
 def board_for(state: GameSessionState) -> PhaseBoard:
-    return FeedBoard() if state.mode is GameMode.GROUP else SingleCardBoard()
+    return FeedBoard() if state.seating is Seating.GROUP else SingleCardBoard()

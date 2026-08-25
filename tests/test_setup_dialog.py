@@ -17,10 +17,11 @@ from fake_bot import FakeSession, make_bot
 from fake_games import FakeGameStateRepository
 from fake_lobbies import FakeLobbyRepository
 from fake_words import HINTS, WORD, FakeWord, FakeWords, catalog, pizza
+from undercover.bot.routers import setup as setup_package
 from undercover.bot.routers.reveal import start_reveal
-from undercover.bot.routers.setup_dialog import create_setup_dialog
-from undercover.bot.routers.setup_draft import Setup
+from undercover.bot.routers.setup import create_setup_dialog
 from undercover.bot.routers.start import create_start_router
+from undercover.bot.setup_states import Setup
 from undercover.db.repositories.words import CategoryOption, WordsRepository
 from undercover.game.engine import (
     MAX_NAME_LENGTH,
@@ -32,7 +33,8 @@ from undercover.game.engine import (
 )
 from undercover.game.models import GameStatus
 from undercover.game.nicknames import NICKNAMES
-from undercover.texts import Buttons, Errors, Reveal
+from undercover.game.settings import DEFAULT_TURN_SECONDS, TURN_CHOICES, Ruleset
+from undercover.texts import Buttons, Errors, Reveal, ruleset_label, spies_label, turn_label
 from undercover.texts import Setup as SetupTexts
 
 CHAT_ID: Final = 100500
@@ -136,11 +138,8 @@ def names_window(entered: int, players_count: int, *names: str) -> str:
     )
 
 
-async def fill(
-    table: Table, players_count: int, spies_count: int = 1, names: Sequence[str] | None = None
-) -> list[str]:
+async def fill(table: Table, players_count: int, names: Sequence[str] | None = None) -> list[str]:
     await table.send(str(players_count))
-    await table.send(str(spies_count))
     chosen = list(names or NAMES[:players_count])
     for name in chosen:
         await table.send(name)
@@ -163,7 +162,9 @@ async def test_full_setup_ends_with_a_session_ready_to_deal(
 ) -> None:
     spies_count = max_spies_count(players_count)
 
-    names = await fill(table, players_count, spies_count)
+    names = await fill(table, players_count)
+    for count in range(1, spies_count):
+        await table.click(spies_label(count))
     await table.click(Buttons.PLAY)
 
     state = table.games.stored
@@ -192,7 +193,7 @@ async def test_the_deal_starts_right_after_the_play_button(table: Table) -> None
 
 
 async def test_confirmation_shows_the_deal_order(table: Table) -> None:
-    names = await fill(table, 4, spies_count=1)
+    names = await fill(table, 4)
 
     assert (
         SetupTexts.CONFIRM_START.format(
@@ -228,19 +229,12 @@ async def test_the_dialog_closes_after_the_game_is_built(table: Table) -> None:
 
 async def test_the_name_counter_walks_through_the_whole_table(table: Table) -> None:
     await table.send("3")
-    await table.send("1")
 
     assert names_window(0, 3) in table.text
 
     await table.send("Аня")
 
     assert names_window(1, 3, "Аня") in table.text
-
-
-async def test_the_spies_question_knows_the_table_size(table: Table) -> None:
-    await table.send("9")
-
-    assert SetupTexts.ASK_SPIES_COUNT.format(players_count=9, max_spies=3) in table.text
 
 
 @pytest.mark.parametrize("answer", ["много", "  ", "3.5", "-", "шесть"])
@@ -263,40 +257,13 @@ async def test_a_rejected_count_does_not_move_the_dialog_on(table: Table) -> Non
     await table.send("17")
     await table.send("4")
 
-    assert SetupTexts.ASK_SPIES_COUNT.format(players_count=4, max_spies=1) in table.text
+    assert names_window(0, 4) in table.text
     assert SetupTexts.BAD_PLAYERS_COUNT not in table.text
-
-
-@pytest.mark.parametrize("answer", ["0", "3", "6", "-1"])
-async def test_spies_count_must_leave_civilians_in_the_majority(table: Table, answer: str) -> None:
-    await table.send("6")
-
-    await table.send(answer)
-
-    assert SetupTexts.BAD_SPIES_COUNT.format(players_count=6, max_spies=2) in table.text
-
-
-async def test_spies_count_must_be_a_number(table: Table) -> None:
-    await table.send("6")
-
-    await table.send("парочка")
-
-    assert SetupTexts.NOT_A_NUMBER in table.text
-    assert SetupTexts.ASK_SPIES_COUNT.format(players_count=6, max_spies=2) in table.text
-
-
-async def test_the_maximum_number_of_spies_is_accepted(table: Table) -> None:
-    await table.send("6")
-
-    await table.send("2")
-
-    assert names_window(0, 6) in table.text
 
 
 @pytest.mark.parametrize("answer", [" ", "\n", " \n  "])
 async def test_a_player_needs_a_name(table: Table, answer: str) -> None:
     await table.send("3")
-    await table.send("1")
 
     await table.send(answer)
 
@@ -306,7 +273,6 @@ async def test_a_player_needs_a_name(table: Table, answer: str) -> None:
 
 async def test_a_name_must_fit_on_the_card(table: Table) -> None:
     await table.send("3")
-    await table.send("1")
 
     await table.send("А" * (MAX_NAME_LENGTH + 1))
 
@@ -317,7 +283,6 @@ async def test_a_name_must_fit_on_the_card(table: Table) -> None:
 @pytest.mark.parametrize("twin", ["Аня", "аня", "  АНЯ  "])
 async def test_two_players_cannot_share_a_name(table: Table, twin: str) -> None:
     await table.send("3")
-    await table.send("1")
     await table.send("Аня")
 
     await table.send(twin)
@@ -328,7 +293,6 @@ async def test_two_players_cannot_share_a_name(table: Table, twin: str) -> None:
 
 async def test_a_name_keeps_its_spelling_but_loses_extra_spaces(table: Table) -> None:
     await table.send("2")
-    await table.send("1")
 
     await table.send("  Аня   Петрова\n")
     await table.send("Борис")
@@ -339,7 +303,6 @@ async def test_a_name_keeps_its_spelling_but_loses_extra_spaces(table: Table) ->
 
 async def test_the_last_name_can_be_taken_back(table: Table) -> None:
     await table.send("3")
-    await table.send("1")
     await table.send("Аня")
     await table.send("Опечатка")
 
@@ -350,7 +313,6 @@ async def test_the_last_name_can_be_taken_back(table: Table) -> None:
 
 async def test_the_whole_table_can_be_named_by_the_bot(table: Table) -> None:
     await table.send("4")
-    await table.send("1")
 
     await table.click(Buttons.AUTOFILL_NAMES)
     await table.click(Buttons.PLAY)
@@ -363,7 +325,6 @@ async def test_the_whole_table_can_be_named_by_the_bot(table: Table) -> None:
 
 async def test_the_bot_names_only_the_empty_seats(table: Table) -> None:
     await table.send("4")
-    await table.send("1")
     await table.send("Аня")
     await table.send("Борис")
 
@@ -378,7 +339,6 @@ async def test_the_bot_names_only_the_empty_seats(table: Table) -> None:
 async def test_the_bot_never_names_a_twin(table: Table) -> None:
     guest = NICKNAMES[0]
     await table.send("3")
-    await table.send("1")
     await table.send(guest.lower())
 
     await table.click(Buttons.AUTOFILL_NAMES)
@@ -388,7 +348,6 @@ async def test_the_bot_never_names_a_twin(table: Table) -> None:
 
 async def test_a_named_table_goes_straight_to_the_categories(picky_table: Table) -> None:
     await picky_table.send("3")
-    await picky_table.send("1")
 
     await picky_table.click(Buttons.AUTOFILL_NAMES)
 
@@ -397,7 +356,6 @@ async def test_a_named_table_goes_straight_to_the_categories(picky_table: Table)
 
 async def test_the_bot_names_wipe_the_last_complaint(table: Table) -> None:
     await table.send("3")
-    await table.send("1")
     await table.send("Аня")
     await table.send("Аня")
 
@@ -408,7 +366,6 @@ async def test_the_bot_names_wipe_the_last_complaint(table: Table) -> None:
 
 async def test_there_is_nothing_to_take_back_before_the_first_name(table: Table) -> None:
     await table.send("3")
-    await table.send("1")
 
     with pytest.raises(ValueError, match="No button"):
         await table.click(Buttons.UNDO_NAME)
@@ -416,7 +373,6 @@ async def test_there_is_nothing_to_take_back_before_the_first_name(table: Table)
 
 async def test_a_taken_back_name_can_be_used_again(table: Table) -> None:
     await table.send("2")
-    await table.send("1")
     await table.send("Аня")
     await table.click(Buttons.UNDO_NAME)
 
@@ -434,7 +390,6 @@ async def test_restart_wipes_the_draft(table: Table) -> None:
     assert SetupTexts.ASK_PLAYERS_COUNT in table.text
 
     await table.send("2")
-    await table.send("1")
 
     assert names_window(0, 2) in table.text
     assert table.games.saves == 0
@@ -491,7 +446,6 @@ async def test_a_single_category_is_not_worth_asking_about() -> None:
 
 async def test_the_question_comes_after_the_names(picky_table: Table) -> None:
     await picky_table.send("3")
-    await picky_table.send("1")
     for name in NAMES[:3]:
         await picky_table.send(name)
 
@@ -510,7 +464,6 @@ async def test_an_unmarked_choice_means_the_whole_dictionary(picky_table: Table)
 
 async def test_marked_categories_reach_the_game(picky_table: Table) -> None:
     await picky_table.send("3")
-    await picky_table.send("1")
     for name in NAMES[:3]:
         await picky_table.send(name)
 
@@ -525,7 +478,6 @@ async def test_marked_categories_reach_the_game(picky_table: Table) -> None:
 
 async def test_a_marked_category_can_be_unmarked(picky_table: Table) -> None:
     await picky_table.send("3")
-    await picky_table.send("1")
     for name in NAMES[:3]:
         await picky_table.send(name)
 
@@ -540,7 +492,6 @@ async def test_a_marked_category_can_be_unmarked(picky_table: Table) -> None:
 
 async def test_the_confirmation_names_the_chosen_categories(picky_table: Table) -> None:
     await picky_table.send("3")
-    await picky_table.send("1")
     names = list(NAMES[:3])
     for name in names:
         await picky_table.send(name)
@@ -562,7 +513,6 @@ async def test_the_confirmation_names_the_chosen_categories(picky_table: Table) 
 
 async def test_restart_forgets_the_chosen_categories(picky_table: Table) -> None:
     await picky_table.send("3")
-    await picky_table.send("1")
     for name in NAMES[:3]:
         await picky_table.send(name)
     await picky_table.click("Еда")
@@ -603,7 +553,6 @@ async def test_a_table_without_a_choice_has_nothing_to_reopen(table: Table) -> N
 async def test_categories_left_without_words_are_explained(picky_table: Table) -> None:
     picky_table.words.empty_categories = frozenset({1, 2, 3})
     await picky_table.send("3")
-    await picky_table.send("1")
     for name in NAMES[:3]:
         await picky_table.send(name)
     await picky_table.click("Еда")
@@ -639,3 +588,57 @@ def test_words_repository_fits_the_catalog_protocol() -> None:
     assert actual.parameters == expected.parameters
     assert inspect.iscoroutinefunction(WordsRepository.list_playable_categories)
     assert all(hasattr(CategoryOption, name) for name in ("id", "title"))
+
+
+def test_setup_package_exposes_its_entry_points() -> None:
+    assert setup_package.Setup.ask_players_count is not None
+    assert callable(setup_package.create_setup_dialog)
+
+
+def button_texts(table: Table) -> list[str]:
+    markup = table.screen.reply_markup
+    assert markup is not None
+    return [button.text for row in markup.inline_keyboard for button in row]
+
+
+async def test_confirm_window_offers_all_three_settings(table: Table) -> None:
+    await fill(table, 6)
+
+    assert spies_label(1) in button_texts(table)
+    assert turn_label(DEFAULT_TURN_SECONDS) in button_texts(table)
+    assert ruleset_label(Ruleset.CLASSIC) in button_texts(table)
+
+
+async def test_spies_button_cycles_within_the_table_limit(table: Table) -> None:
+    await fill(table, 6)
+
+    await table.click(spies_label(1))
+
+    assert spies_label(2) in button_texts(table)
+
+
+async def test_ruleset_button_flips_the_win_rules(table: Table) -> None:
+    await fill(table, 6)
+
+    await table.click(ruleset_label(Ruleset.CLASSIC))
+
+    assert ruleset_label(Ruleset.SUDDEN_DEATH) in button_texts(table)
+
+
+async def test_chosen_settings_reach_the_session(table: Table) -> None:
+    await fill(table, 6)
+
+    await table.click(ruleset_label(Ruleset.CLASSIC))
+    await table.click(turn_label(DEFAULT_TURN_SECONDS))
+    await table.click(Buttons.PLAY)
+
+    state = table.games.stored
+    assert state.ruleset is Ruleset.SUDDEN_DEATH
+    assert state.turn_seconds == TURN_CHOICES[TURN_CHOICES.index(DEFAULT_TURN_SECONDS) + 1]
+    assert sum(player.is_spy for player in state.players) == 1
+
+
+async def test_the_dialog_no_longer_asks_for_the_spies_count(table: Table) -> None:
+    await table.send("6")
+
+    assert table.text == names_window(0, 6)

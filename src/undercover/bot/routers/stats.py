@@ -4,10 +4,10 @@ from aiogram import Bot, F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
+from undercover.bot.acks import ack
+from undercover.bot.callbacks import StatsAction, StatsCB
 from undercover.bot.filters import IN_GROUP
 from undercover.bot.stats_view import (
-    StatsAction,
-    StatsCB,
     hall_of_fame_keyboard,
     hall_of_fame_text,
     private_text,
@@ -40,18 +40,18 @@ def create_stats_router(open_stats: StatsSourceFactory) -> Router:
     @router.callback_query(StatsCB.filter(F.action == StatsAction.BOARD))
     async def cb_hall(callback: CallbackQuery, bot: Bot) -> None:
         if callback.message is None:
-            await callback.answer(Errors.STALE_BUTTON, show_alert=True)
+            await ack(callback, Errors.STALE_BUTTON, show_alert=True)
             return
         await show_hall(bot, callback.message.chat.id)
-        await callback.answer()
+        await ack(callback)
 
     @router.callback_query(StatsCB.filter(F.action == StatsAction.ME))
     async def cb_profile(callback: CallbackQuery) -> None:
         if callback.message is None:
-            await callback.answer(Errors.STALE_BUTTON, show_alert=True)
+            await ack(callback, Errors.STALE_BUTTON, show_alert=True)
             return
         async with open_stats() as stats:
             profile = await stats.player_profile(callback.message.chat.id, callback.from_user.id)
-        await callback.answer(profile_text(profile), show_alert=True)
+        await ack(callback, profile_text(profile), show_alert=True)
 
     return router

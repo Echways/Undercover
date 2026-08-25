@@ -1,34 +1,31 @@
 import asyncio
-import logging
-from collections.abc import Awaitable, Callable, Sequence
-from datetime import UTC, datetime
-from enum import StrEnum
+from collections.abc import Sequence
 
 from aiogram import Bot, F, Router
-from aiogram.filters.callback_data import CallbackData
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram_dialog import DialogManager, StartMode
 
+from undercover.bot.acks import ack
 from undercover.bot.boards import board_for
+from undercover.bot.callbacks import FinalAction, FinalCB, TalkAction, TalkCB
+from undercover.bot.cards import card_photo
 from undercover.bot.guards import deny_non_host, load_discussion, load_finished
 from undercover.bot.keyboards import button
-from undercover.bot.message_utils import as_photo
+from undercover.bot.phases import GameLogWriter, PhaseStarter, close_case, report_broken
 from undercover.bot.role_delivery import deliver_roles
-from undercover.bot.routers.discussion import TalkAction, TalkCB, report_broken
-from undercover.bot.routers.reveal import PhaseStarter, start_reveal
-from undercover.bot.routers.setup_draft import Setup
+from undercover.bot.setup_states import Setup
 from undercover.bot.turn_clock import TurnKeeper
 from undercover.game.engine import (
     EmptyWordCatalogError,
-    GameRulesError,
     WordsSourceFactory,
     create_session,
     secure_rng,
 )
-from undercover.game.models import GameMode, GameSessionState, GameStatus
+from undercover.game.models import GameSessionState, GameStatus, Seating
+from undercover.game.rules import GameRulesError
 from undercover.game.summary import summarize
 from undercover.game.voting import misfired
-from undercover.media.card_renderer import CARD_SUFFIX
+from undercover.log import get_logger
 from undercover.media.summary_card import render_summary_card
 from undercover.redis.game_state import GameStateRepository
 from undercover.texts import (
@@ -41,20 +38,7 @@ from undercover.texts import (
     win_line,
 )
 
-logger = logging.getLogger(__name__)
-
-GameLogWriter = Callable[[GameSessionState], Awaitable[int]]
-
-
-class FinalAction(StrEnum):
-    AGAIN = "again"
-    NEW = "new"
-    RESULT = "result"
-
-
-class FinalCB(CallbackData, prefix="final"):
-    action: FinalAction
-    session_id: str
+logger = get_logger(__name__)
 
 
 def create_finale_router(
@@ -62,6 +46,7 @@ def create_finale_router(
     log_game: GameLogWriter,
     keeper: TurnKeeper,
     start_discussion: PhaseStarter,
+    start_reveal: PhaseStarter,
 ) -> Router:
     router = Router(name="finale")
 
@@ -85,7 +70,7 @@ def create_finale_router(
             state.status = GameStatus.FINISHED
             await close_case(log_game, state)
             await show_final(bot, games, state)
-            await callback.answer()
+            await ack(callback)
 
     @router.callback_query(FinalCB.filter(F.action == FinalAction.RESULT))
     async def cb_show_result(
@@ -99,7 +84,7 @@ def create_finale_router(
             return
 
         await show_final(bot, games, state)
-        await callback.answer()
+        await ack(callback)
 
     @router.callback_query(FinalCB.filter(F.action == FinalAction.AGAIN))
     async def cb_play_again(
@@ -124,22 +109,26 @@ def create_finale_router(
                     words=words,
                     rng=secure_rng(),
                     category_ids=state.category_ids,
-                    mode=state.mode,
+                    seating=state.seating,
                     ruleset=state.ruleset,
                     turn_seconds=state.turn_seconds,
                 )
         except EmptyWordCatalogError:
-            logger.exception("партия %s: следующую не собрать, словарь пуст", state.session_id)
-            await callback.answer(empty_catalog_text(state.category_ids), show_alert=True)
+            logger.exception(
+                "finale.empty_catalog",
+                session_id=state.session_id,
+                categories=sorted(state.category_ids),
+            )
+            await ack(callback, empty_catalog_text(state.category_ids), show_alert=True)
             return
         except GameRulesError:
-            logger.exception("партия %s: её состав больше не по правилам", state.session_id)
-            await callback.answer(Errors.BROKEN_SESSION, show_alert=True)
+            logger.exception("finale.roster_refused", session_id=state.session_id)
+            await ack(callback, Errors.BROKEN_SESSION, show_alert=True)
             return
 
-        if fresh.mode is GameMode.GROUP:
+        if fresh.seating is Seating.GROUP:
             if await deliver_roles(bot, fresh):
-                await callback.answer(Lobby.DELIVERY_FAILED, show_alert=True)
+                await ack(callback, Lobby.DELIVERY_FAILED, show_alert=True)
                 return
             await _replace(games, state, fresh)
             await start_discussion(bot, games, fresh)
@@ -148,7 +137,7 @@ def create_finale_router(
             await _replace(games, state, fresh)
             await start_reveal(bot, games, fresh)
 
-        await callback.answer()
+        await ack(callback)
 
     @router.callback_query(FinalCB.filter(F.action == FinalAction.NEW))
     async def cb_new_game(
@@ -164,7 +153,7 @@ def create_finale_router(
         keeper.clock.stop(state.session_id)
         await games.delete(state.session_id)
         await dialog_manager.start(Setup.ask_players_count, mode=StartMode.RESET_STACK)
-        await callback.answer()
+        await ack(callback)
 
     return router
 
@@ -176,21 +165,12 @@ async def show_final(bot: Bot, games: GameStateRepository, state: GameSessionSta
     state.current_message_id = await board_for(state).show(
         bot,
         state,
-        as_photo(image, f"summary.{CARD_SUFFIX}"),
+        card_photo(image, "summary"),
         _final_caption(state, spies),
         _final_keyboard(state),
     )
     state.status = GameStatus.FINISHED
     await games.save(state)
-
-
-async def close_case(log_game: GameLogWriter, state: GameSessionState) -> None:
-    if state.finished_at is None:
-        state.finished_at = datetime.now(UTC)
-    try:
-        state.case_number = await log_game(state)
-    except Exception:
-        logger.exception("партия %s: не записалась в журнал", state.session_id)
 
 
 async def _promo(bot: Bot) -> str | None:
@@ -234,6 +214,6 @@ def _final_keyboard(state: GameSessionState) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [final_button(Buttons.PLAY_AGAIN, FinalAction.AGAIN)],
-            [final_button(Buttons.NEW_GAME, FinalAction.NEW)],
+            [final_button(Buttons.RESTART, FinalAction.NEW)],
         ]
     )

@@ -1,4 +1,3 @@
-import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import cast
@@ -8,7 +7,7 @@ from aiogram import Dispatcher
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from conftest import SetEnv
+from conftest import SetEnv, journal
 from undercover.config import Settings, load_settings
 from undercover.di import AppDependencies, DependencyUnavailableError, build_dependencies
 from undercover.redis.dialog_state import DialogStateRepository
@@ -111,15 +110,13 @@ def test_engine_is_not_exposed_to_handlers(settings: Settings) -> None:
     }
 
 
-async def test_check_connections_logs_both_services(
-    settings: Settings, caplog: pytest.LogCaptureFixture
-) -> None:
-    with caplog.at_level(logging.INFO, logger="undercover.di"):
+async def test_check_connections_logs_both_services(settings: Settings) -> None:
+    with journal() as records:
         await _dependencies(settings).check_connections()
 
-    assert [record.getMessage() for record in caplog.records] == [
-        "подключение к PostgreSQL (postgres:5432/undercover) установлено",
-        "подключение к Redis (redis:6379/0) установлено",
+    assert [(record["event"], record["service"], record["target"]) for record in records] == [
+        ("dependency.ready", "PostgreSQL", "postgres:5432/undercover"),
+        ("dependency.ready", "Redis", "redis:6379/0"),
     ]
 
 

@@ -5,11 +5,13 @@ from redis.asyncio import Redis
 
 from undercover.game.models import LobbyState
 
-__all__ = ["LOBBY_KEY_PREFIX", "LOBBY_TTL", "LobbyRepository", "LobbyState"]
+__all__ = ["LOBBY_KEY_PREFIX", "LOBBY_TTL", "LOBBY_VERSION", "LobbyRepository", "LobbyState"]
 
 LOBBY_TTL: Final = timedelta(hours=6)
 
-LOBBY_KEY_PREFIX: Final = "lobby:"
+LOBBY_VERSION: Final = "v1"
+
+LOBBY_KEY_PREFIX: Final = f"lobby:{LOBBY_VERSION}:"
 
 
 class LobbyRepository:
