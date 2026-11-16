@@ -1,4 +1,4 @@
-FROM python:3.13-slim AS builder
+FROM python:3.15-slim AS builder
 
 ENV POETRY_VERSION=2.4.1 \
     POETRY_HOME=/opt/poetry \
@@ -19,7 +19,7 @@ COPY src ./src
 
 RUN poetry install --only main
 
-FROM python:3.13-slim
+FROM python:3.15-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
